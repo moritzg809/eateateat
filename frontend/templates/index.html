@@ -412,7 +412,12 @@
             📍 {{ r.address.split(',')[0] }}
           </p>
           {% endif %}
-          <div class="flex gap-3 shrink-0">
+          <div class="flex gap-3 shrink-0 items-center">
+            <button data-sim-id="{{ r.place_id }}" data-sim-name="{{ r.name | e }}"
+                    onclick="showSimilar(this.dataset.simId, this.dataset.simName)"
+                    class="font-mono text-[10px] text-ink/35 hover:text-terra uppercase tracking-wide transition-colors">
+              ≈ Ähnliche
+            </button>
             {% if r.website %}
             <a href="{{ r.website }}" target="_blank" rel="noopener"
                class="font-mono text-[10px] text-terra hover:text-rust uppercase tracking-wide">Web ↗</a>
@@ -521,6 +526,47 @@
   </div>
 </footer>
 
+<!-- ═══ SIMILAR RESTAURANTS MODAL ══════════════════════════════════ -->
+<div id="sim-modal"
+     class="hidden fixed inset-0 z-50 flex items-start justify-center bg-ink/70 backdrop-blur-sm overflow-y-auto py-8 px-4"
+     onclick="if(event.target===this)closeSimilar()">
+  <div class="bg-cream rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+
+    <!-- Header -->
+    <div class="flex items-start justify-between px-6 py-5 border-b border-sand">
+      <div>
+        <h3 id="sim-title" class="font-serif text-xl font-bold text-ink leading-tight">Ähnliche Restaurants</h3>
+        <p class="font-mono text-[10px] text-ink/35 uppercase tracking-widest mt-1">basierend auf Profil-Scores &amp; Stimmung</p>
+      </div>
+      <button onclick="closeSimilar()"
+              class="shrink-0 ml-4 w-9 h-9 flex items-center justify-center rounded-full
+                     bg-ink/8 text-ink/40 hover:bg-ink/14 transition-colors font-mono text-sm">
+        ✕
+      </button>
+    </div>
+
+    <!-- Body -->
+    <div class="p-6">
+
+      <!-- Spinner -->
+      <div id="sim-spinner" class="flex items-center justify-center py-14">
+        <div class="w-8 h-8 border-2 rounded-full animate-spin"
+             style="border-color:rgba(196,98,45,.2);border-top-color:#c4622d"></div>
+      </div>
+
+      <!-- Mini-card grid (populated by JS) -->
+      <div id="sim-grid" class="hidden grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
+
+      <!-- Empty state -->
+      <div id="sim-empty" class="hidden text-center py-12">
+        <div class="font-serif text-5xl mb-3 opacity-10">🔍</div>
+        <p class="font-sans text-sm text-ink/40">Keine ähnlichen Restaurants gefunden.</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <!-- ═══ SCORE POPOVER ══════════════════════════════════════════════ -->
 <div id="fav-popover"
      class="hidden fixed inset-0 z-50 flex items-center justify-center bg-ink/60 backdrop-blur-sm"
@@ -614,6 +660,120 @@
     fetch(`/api/favorite/${placeId}`, { method: 'DELETE' })
       .then(() => _updateCard(placeId, null, null));
   }
+
+  /* ── Similar restaurants ─────────────────────────────────────────── */
+  const _simCache = new Map();
+
+  function showSimilar(placeId, name) {
+    const modal   = document.getElementById('sim-modal');
+    const title   = document.getElementById('sim-title');
+    const spinner = document.getElementById('sim-spinner');
+    const grid    = document.getElementById('sim-grid');
+    const empty   = document.getElementById('sim-empty');
+
+    title.textContent = `Ähnlich wie „${name}"`;
+    spinner.classList.remove('hidden');
+    grid.classList.add('hidden');
+    grid.innerHTML = '';
+    empty.classList.add('hidden');
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+
+    if (_simCache.has(placeId)) {
+      _renderSimilar(_simCache.get(placeId));
+      return;
+    }
+
+    fetch(`/api/similar/${placeId}`)
+      .then(r => r.json())
+      .then(data => {
+        _simCache.set(placeId, data);
+        _renderSimilar(data);
+      })
+      .catch(() => {
+        spinner.classList.add('hidden');
+        empty.classList.remove('hidden');
+      });
+  }
+
+  function closeSimilar() {
+    document.getElementById('sim-modal').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  function _simBadge(sim) {
+    const pct = Math.round(sim * 100);
+    let cls;
+    if (pct >= 80)      cls = 'background:#d4edda;color:#1a5c2e';
+    else if (pct >= 65) cls = 'background:#fff3cd;color:#7a5500';
+    else                cls = 'background:#ebebeb;color:#555';
+    return `<span style="font-family:monospace;font-size:10px;font-weight:700;padding:2px 7px;border-radius:9999px;${cls}">${pct}%</span>`;
+  }
+
+  function _renderSimilar(items) {
+    const spinner = document.getElementById('sim-spinner');
+    const grid    = document.getElementById('sim-grid');
+    const empty   = document.getElementById('sim-empty');
+
+    spinner.classList.add('hidden');
+
+    if (!items || !items.length) {
+      empty.classList.remove('hidden');
+      return;
+    }
+
+    grid.innerHTML = items.map(r => {
+      const photo = r.photo_url
+        ? `<img src="${r.photo_url}" alt="" class="w-full h-28 object-cover" loading="lazy" onerror="this.parentNode.innerHTML='<div class=\\'w-full h-28 bg-gradient-to-br from-sand to-stone-100 flex items-center justify-center\\'><span class=\\'text-4xl opacity-20\\'>' + (r ? r.type_emoji : '🍽️') + '</span></div>'">`
+        : `<div class="w-full h-28 bg-gradient-to-br from-sand to-stone-100 flex items-center justify-center"><span class="text-4xl opacity-20">${r.type_emoji}</span></div>`;
+      const ratingStr = r.rating ? `★ ${Math.round(r.rating * 20)}/100` : '';
+      const priceStr  = r.price_level ? `<span style="margin-left:auto;font-family:monospace;font-size:10px;color:#0f0e0d55">${r.price_level}</span>` : '';
+      const vibeStr   = r.vibe
+        ? `<p style="font-size:11px;font-style:italic;color:#0f0e0d66;line-height:1.35;padding:4px 10px 6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${r.vibe.substring(0,90)}${r.vibe.length>90?'…':''}</p>`
+        : '';
+      return `
+        <div onclick="_goToCard('${r.place_id}')"
+             style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e8e0cc;cursor:pointer;transition:border-color .15s,box-shadow .15s"
+             onmouseover="this.style.borderColor='#c4622d50';this.style.boxShadow='0 4px 16px rgba(15,14,13,.1)'"
+             onmouseout="this.style.borderColor='#e8e0cc';this.style.boxShadow=''">
+          <div style="position:relative">
+            ${photo}
+            <div style="position:absolute;top:6px;right:6px">${_simBadge(r.similarity)}</div>
+          </div>
+          <div style="padding:8px 10px 4px">
+            <p style="font-family:Georgia,serif;font-size:13px;font-weight:700;color:#0f0e0d;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical">${r.name}</p>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
+              <span style="font-family:monospace;font-size:10px;color:#0f0e0d66">${r.type_emoji} ${ratingStr}</span>
+              ${priceStr}
+            </div>
+          </div>
+          ${vibeStr}
+        </div>`;
+    }).join('');
+
+    grid.classList.remove('hidden');
+  }
+
+  function _goToCard(placeId) {
+    closeSimilar();
+    const card = document.querySelector(`[data-place-id="${placeId}"]`);
+    if (card) {
+      setTimeout(() => {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.style.outline = '3px solid #c4622d';
+        card.style.outlineOffset = '3px';
+        setTimeout(() => { card.style.outline = ''; card.style.outlineOffset = ''; }, 2000);
+      }, 150);
+    }
+  }
+
+  /* ── Close modal on Escape ───────────────────────────────────────── */
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      closeSimilar();
+      closeFavPopover();
+    }
+  });
 
   function _updateCard(placeId, type, score) {
     const card = document.querySelector(`[data-place-id="${placeId}"]`);
