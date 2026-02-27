@@ -536,24 +536,13 @@
     <div class="flex items-start justify-between px-6 py-5 border-b border-sand">
       <div>
         <h3 id="sim-title" class="font-serif text-xl font-bold text-ink leading-tight">Ähnliche Restaurants</h3>
-        <p id="sim-subtitle" class="font-mono text-[10px] text-ink/35 uppercase tracking-widest mt-1"></p>
+        <p class="font-mono text-[10px] text-ink/35 uppercase tracking-widest mt-1">basierend auf Profil-Scores &amp; Stimmung</p>
       </div>
-      <div class="flex items-center gap-2 shrink-0 ml-4">
-        <!-- v1/v2/v3 toggle -->
-        <div class="flex rounded-lg overflow-hidden border border-sand font-mono text-[10px] uppercase tracking-wide">
-          <button id="sim-btn-v2" onclick="_simSetVersion('v2')"
-                  class="px-2.5 py-1 transition-colors">V2</button>
-          <button id="sim-btn-v3" onclick="_simSetVersion('v3')"
-                  class="px-2.5 py-1 transition-colors border-l border-sand">V3</button>
-          <button id="sim-btn-v1" onclick="_simSetVersion('v1')"
-                  class="px-2.5 py-1 transition-colors border-l border-sand">V1</button>
-        </div>
-        <button onclick="closeSimilar()"
-                class="w-9 h-9 flex items-center justify-center rounded-full
-                       bg-ink/8 text-ink/40 hover:bg-ink/14 transition-colors font-mono text-sm">
-          ✕
-        </button>
-      </div>
+      <button onclick="closeSimilar()"
+              class="shrink-0 ml-4 w-9 h-9 flex items-center justify-center rounded-full
+                     bg-ink/8 text-ink/40 hover:bg-ink/14 transition-colors font-mono text-sm">
+        ✕
+      </button>
     </div>
 
     <!-- Body -->
@@ -673,75 +662,38 @@
   }
 
   /* ── Similar restaurants ─────────────────────────────────────────── */
-  const _simCache     = new Map();   // key: "v2:placeId" or "v1:placeId"
-  let _simCurrentId   = null;
-  let _simVersion     = 'v2';
+  const _simCache = new Map();
 
-  const _simSubtitles = {
-    v2: 'Embeddings · Profil-Scores · Öffnungszeiten',
-    v3: 'Embeddings · Tags · Profil-Scores · Öffnungszeiten',
-    v1: 'Profil-Scores · SerpAPI-Tags',
-  };
+  function showSimilar(placeId, name) {
+    const modal   = document.getElementById('sim-modal');
+    const title   = document.getElementById('sim-title');
+    const spinner = document.getElementById('sim-spinner');
+    const grid    = document.getElementById('sim-grid');
+    const empty   = document.getElementById('sim-empty');
 
-  function _simUpdateToggle() {
-    const active   = 'bg-terra text-cream';
-    const inactive = 'text-ink/40 hover:text-ink';
-    for (const v of ['v2', 'v3', 'v1']) {
-      const btn = document.getElementById(`sim-btn-${v}`);
-      if (!btn) continue;
-      const border = v !== 'v2' ? ' border-l border-sand' : '';
-      btn.className = `px-2.5 py-1 transition-colors${border} ${_simVersion === v ? active : inactive}`;
-    }
-    document.getElementById('sim-subtitle').textContent = _simSubtitles[_simVersion];
-  }
-
-  function _simSetVersion(ver) {
-    if (ver === _simVersion) return;
-    _simVersion = ver;
-    _simUpdateToggle();
-    if (_simCurrentId) _simFetch(_simCurrentId);
-  }
-
-  function _simFetch(placeId) {
-    const cacheKey = `${_simVersion}:${placeId}`;
-    const spinner  = document.getElementById('sim-spinner');
-    const grid     = document.getElementById('sim-grid');
-    const empty    = document.getElementById('sim-empty');
-
+    title.textContent = `Ähnlich wie „${name}"`;
     spinner.classList.remove('hidden');
     grid.classList.add('hidden');
     grid.innerHTML = '';
     empty.classList.add('hidden');
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
 
-    if (_simCache.has(cacheKey)) {
-      _renderSimilar(_simCache.get(cacheKey));
+    if (_simCache.has(placeId)) {
+      _renderSimilar(_simCache.get(placeId));
       return;
     }
 
-    const endpoints = { v1: `/api/similar_v1/${placeId}`, v3: `/api/similar_v3/${placeId}` };
-    const endpoint  = endpoints[_simVersion] ?? `/api/similar/${placeId}`;
-    fetch(endpoint)
+    fetch(`/api/similar/${placeId}`)
       .then(r => r.json())
       .then(data => {
-        _simCache.set(cacheKey, data);
+        _simCache.set(placeId, data);
         _renderSimilar(data);
       })
       .catch(() => {
         spinner.classList.add('hidden');
         empty.classList.remove('hidden');
       });
-  }
-
-  function showSimilar(placeId, name) {
-    const modal = document.getElementById('sim-modal');
-    const title = document.getElementById('sim-title');
-
-    _simCurrentId = placeId;
-    title.textContent = `Ähnlich wie „${name}"`;
-    modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-    _simUpdateToggle();
-    _simFetch(placeId);
   }
 
   function closeSimilar() {
