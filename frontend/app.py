@@ -211,11 +211,14 @@ def _load_candidates(conn) -> list[dict]:
                 COALESCE(e.unique_score,    0) AS unique_score,
                 COALESCE(e.dresscode_score, 0) AS dresscode_score,
                 e.vibe,
-                emb.embedding
+                emb.embedding,
+                COALESCE(sd.atmosphere, '{}') || COALESCE(sd.offerings, '{}') ||
+                COALESCE(sd.crowd,      '{}') || COALESCE(sd.highlights,'{}') AS tags
             FROM  top_restaurants           r
             JOIN  restaurants             res ON res.place_id = r.place_id
             LEFT JOIN gemini_enrichments    e ON e.place_id   = r.place_id
             LEFT JOIN restaurant_embeddings emb ON emb.place_id = r.place_id
+            LEFT JOIN serpapi_details      sd  ON sd.place_id  = r.place_id
         """)
         raw_rows = [dict(r) for r in cur.fetchall()]
 
@@ -237,6 +240,9 @@ def _load_candidates(conn) -> list[dict]:
 
         # open_slots as a frozenset for fast Jaccard
         row["slots_set"] = frozenset(row.get("open_slots") or [])
+
+        # SerpAPI tags as a frozenset for fast Jaccard (v3)
+        row["tags_set"] = frozenset(row.get("tags") or [])
 
         processed.append(row)
 
@@ -518,6 +524,96 @@ def api_similar_v1(place_id):
             "vibe":        row.get("vibe"),
             "photo_url":   _photo_url(pid, row.get("thumbnail_url")),
             "similarity":  round(float(row["similarity"]), 3),
+        })
+    return jsonify(results)
+
+
+# ── Recommender v3 (embeddings + tags Jaccard, lower emb weight) ─────────────
+#
+#  Like v2 but adds SerpAPI tag Jaccard and reduces embedding weight:
+#    0.40 × embedding cosine   (↓ from 0.55 in v2)
+#    0.20 × profile-score cosine
+#    0.15 × SerpAPI tag Jaccard  (new vs v2)
+#    0.15 × open-hours Jaccard
+#    0.05 × type bonus
+#    0.05 × price bonus
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/similar_v3/<place_id>")
+def api_similar_v3(place_id):
+    """V3 recommender — embeddings + SerpAPI tag Jaccard, lower embedding weight.
+
+    0.40 × embedding cosine
+    0.20 × profile-score cosine
+    0.15 × SerpAPI tag Jaccard
+    0.15 × open-hours Jaccard
+    0.05 × type bonus
+    0.05 × price bonus
+    """
+    n    = min(int(request.args.get("n", 6)), 20)
+    conn = get_db()
+    try:
+        candidates = _load_candidates(conn)
+    finally:
+        conn.close()
+
+    target = next((c for c in candidates if c["place_id"] == place_id), None)
+    if not target or target["scores_norm"] is None:
+        return jsonify([])
+
+    t_scores = target["scores_norm"]
+    t_emb    = target["emb_norm"]
+    t_slots  = target["slots_set"]
+    t_tags   = target["tags_set"]
+    t_type   = target["place_type"]
+    t_price  = target["price_level"]
+    use_emb  = t_emb is not None
+
+    ranked: list[tuple[float, dict]] = []
+
+    for cand in candidates:
+        if cand["place_id"] == place_id or cand["scores_norm"] is None:
+            continue
+
+        score_cos = float(np.dot(t_scores, cand["scores_norm"]))
+        c_emb     = cand["emb_norm"]
+        emb_cos   = float(np.dot(t_emb, c_emb)) if use_emb and c_emb is not None else 0.0
+        slots_j   = _jaccard(t_slots, cand["slots_set"])
+        tags_j    = _jaccard(t_tags,  cand["tags_set"])
+        type_b    = 0.05 if cand["place_type"] == t_type else 0.0
+        price_b   = _price_bonus(t_price, cand["price_level"])
+
+        if use_emb and c_emb is not None:
+            sim = (0.40 * emb_cos
+                 + 0.20 * score_cos
+                 + 0.15 * tags_j
+                 + 0.15 * slots_j
+                 + type_b + price_b)
+        else:
+            # Fallback without embeddings: redistribute emb weight to scores + tags
+            sim = (0.45 * score_cos
+                 + 0.25 * tags_j
+                 + 0.15 * slots_j
+                 + type_b + price_b)
+
+        if sim >= 0.50:
+            ranked.append((sim, cand))
+
+    ranked.sort(key=lambda x: x[0], reverse=True)
+
+    results = []
+    for sim, cand in ranked[:n]:
+        pid = cand["place_id"]
+        type_emoji, _ = _classify_type(cand.get("place_type"))
+        results.append({
+            "place_id":    pid,
+            "name":        cand["name"],
+            "rating":      float(cand["rating"]) if cand["rating"] else None,
+            "price_level": cand.get("price_level"),
+            "type_emoji":  type_emoji,
+            "vibe":        cand.get("vibe"),
+            "photo_url":   _photo_url(pid, cand.get("thumbnail_url")),
+            "similarity":  round(sim, 3),
         })
     return jsonify(results)
 
