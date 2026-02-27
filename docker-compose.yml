@@ -52,11 +52,13 @@ services:
     environment:
       SERPAPI_API_KEYS: ${SERPAPI_API_KEYS:-${SERPAPI_API_KEY}}
       DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+      PHOTOS_DIR: /photos
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./scraper:/app
+      - photos:/photos
     profiles:
       - detail
 
@@ -69,11 +71,13 @@ services:
       SERPAPI_API_KEYS: ${SERPAPI_API_KEYS:-${SERPAPI_API_KEY}}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+      PHOTOS_DIR: /photos
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./scraper:/app
+      - photos:/photos
     profiles:
       - pipeline
 
@@ -87,6 +91,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - photos:/app/static/photos
 
   # ── Admin frontend: pipeline status dashboard ──────────────────────────────
   admin-frontend:
@@ -101,3 +107,4 @@ services:
 
 volumes:
   postgres_data:
+  photos:

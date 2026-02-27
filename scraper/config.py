@@ -9,6 +9,7 @@ SEARCH_TERMS = [
     "Brunch",
     "Wine Bar",
     "Bodega",
+    "Vermuteria",
     "Restaurant",
     "Chiringuito",
     "Tapas modern",

@@ -34,6 +34,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SERPAPI_URL = "https://serpapi.com/search"
+PHOTOS_DIR  = os.getenv("PHOTOS_DIR", "/photos")
+
+# Photo download settings
+_SKIP_PHOTO_TITLES = {"all", "latest", "videos", "street view & 360°",
+                      "street view", "360°", "popular dishes"}
+_PHOTO_ORDER = ["by owner", "exterior", "food & drink",
+                "from visitors", "amenities", "atmosphere", "rooms"]
+MAX_PHOTOS = 8
 
 _SESSION = requests.Session()
 _rotator: KeyRotator | None = None
@@ -44,6 +52,63 @@ def _get_rotator() -> KeyRotator:
     if _rotator is None:
         _rotator = KeyRotator.from_env("SERPAPI_API_KEYS", "SERPAPI_API_KEY")
     return _rotator
+
+
+# ---------------------------------------------------------------------------
+# Photo caching
+# ---------------------------------------------------------------------------
+
+def _photo_sort_key(cat: str) -> tuple:
+    try:
+        return (0, _PHOTO_ORDER.index(cat))
+    except ValueError:
+        return (1, cat)
+
+
+def download_photos(place_id: str, images: list) -> int:
+    """
+    Download and cache restaurant photos to PHOTOS_DIR/{place_id}/.
+    Files are saved as 0.jpg, 1.jpg, … in priority order (by owner first).
+    Already-cached files are skipped. Returns count of photos now on disk.
+    """
+    dest_dir = os.path.join(PHOTOS_DIR, place_id)
+
+    # Build sorted candidate list: (category, url)
+    candidates: list[tuple[str, str]] = []
+    for img in images:
+        title = (img.get("title") or "").lower()
+        if title in _SKIP_PHOTO_TITLES:
+            continue
+        # serpapi_thumbnail is SerpAPI-hosted — no hotlink issues
+        url = img.get("serpapi_thumbnail") or img.get("thumbnail", "")
+        if url:
+            candidates.append((title, url))
+
+    candidates.sort(key=lambda x: _photo_sort_key(x[0]))
+    candidates = candidates[:MAX_PHOTOS]
+
+    if not candidates:
+        return 0
+
+    os.makedirs(dest_dir, exist_ok=True)
+    count = 0
+
+    for idx, (category, url) in enumerate(candidates):
+        path = os.path.join(dest_dir, f"{idx}.jpg")
+        if os.path.exists(path):
+            count += 1
+            continue
+        try:
+            resp = _SESSION.get(url, timeout=15)
+            resp.raise_for_status()
+            with open(path, "wb") as fh:
+                fh.write(resp.content)
+            count += 1
+            time.sleep(0.05)
+        except Exception as exc:
+            logger.warning("Photo %d (%s) download failed: %s", idx, category, exc)
+
+    return count
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +309,13 @@ def run(limit=None, min_rating=4.5, min_reviews=100, dry_run=False, force=False)
         try:
             place, raw_response = fetch_place_details(data_cid)
             save_details(conn, place_id, place, raw_response)
+
+            # Download and cache photos locally
+            images = raw_response.get("place_results", {}).get("images", [])
+            if images:
+                n_photos = download_photos(place_id, images)
+                if n_photos:
+                    logger.info("         -> 📷 %d photos cached", n_photos)
 
             # Closed restaurant detection
             if is_place_closed(place):

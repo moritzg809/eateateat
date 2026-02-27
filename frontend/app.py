@@ -6,6 +6,9 @@ from flask import Flask, render_template, request
 
 app = Flask(__name__)
 
+PHOTOS_DIR  = "/app/static/photos"   # Docker volume mount (same as scraper's /photos)
+MAX_PHOTOS  = 8
+
 PROFILES = [
     ("family",   "👨‍👩‍👧", "Familie"),
     ("date",     "💑",     "Date Night"),
@@ -163,6 +166,24 @@ def index():
                 r = dict(row)
                 r["city"] = _extract_city(r.get("address"))
                 r["type_emoji"], r["type_label"] = _classify_type(r.get("place_type"))
+
+                # Load cached photos from Docker volume (downloaded during scraping)
+                place_id   = r["place_id"]
+                photo_dir  = os.path.join(PHOTOS_DIR, place_id)
+                photos: list[str] = []
+                if os.path.isdir(photo_dir):
+                    for i in range(MAX_PHOTOS):
+                        path = os.path.join(photo_dir, f"{i}.jpg")
+                        if os.path.exists(path):
+                            photos.append(f"/static/photos/{place_id}/{i}.jpg")
+                        else:
+                            break  # files are numbered consecutively
+
+                # Fall back to the single Serper thumbnail if no cached photos
+                if not photos and r.get("thumbnail_url"):
+                    photos = [r["thumbnail_url"]]
+                r["photos"] = photos
+
                 restaurants.append(r)
             ctx["restaurants"] = restaurants
 
