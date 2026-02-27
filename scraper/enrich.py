@@ -106,9 +106,27 @@ Antworte AUSSCHLIESSLICH mit diesem JSON (kein Markdown, kein Text davor/danach)
 # Gemini API (google-genai SDK)
 # ---------------------------------------------------------------------------
 
-def _extract_json(text: str) -> dict:
-    """Strip optional markdown code fences and parse JSON."""
+class ModelUncertainError(Exception):
+    """Raised when the model explicitly signals it has no data (responds 'None')."""
+
+
+def _extract_json(text: str | None) -> dict:
+    """Strip optional markdown code fences and parse JSON.
+
+    Raises ModelUncertainError if the model returned 'None' (no data available).
+    Raises json.JSONDecodeError if the text cannot be parsed as JSON.
+    """
+    if not text or text.strip().lower() in ("none", "null", ""):
+        raise ModelUncertainError(f"Model returned no data: {text!r}")
+
+    # Strip markdown code fences
     text = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`").strip()
+
+    # If there's surrounding prose, try to extract the JSON object
+    match = re.search(r"\{[\s\S]*\}", text)
+    if match:
+        text = match.group(0)
+
     return json.loads(text)
 
 
@@ -134,8 +152,19 @@ def call_gemini(name: str, address: str, lat=None, lng=None, retries: int = 3) -
                 contents=prompt,
                 config=types.GenerateContentConfig(**config_kwargs),
             )
-            text   = response.text
-            parsed = _extract_json(text)
+
+            # response.text can be None when the model only emits tool calls
+            text = None
+            try:
+                text = response.text
+            except Exception:
+                # Fallback: collect all text parts manually
+                for candidate in (response.candidates or []):
+                    for part in (candidate.content.parts or []):
+                        if hasattr(part, "text") and part.text:
+                            text = (text or "") + part.text
+
+            parsed = _extract_json(text)  # raises ModelUncertainError or JSONDecodeError
 
             # Build serialisable raw dict (grounding sources + text)
             raw: dict = {"model": MODEL, "text": text, "sources": []}
@@ -152,6 +181,9 @@ def call_gemini(name: str, address: str, lat=None, lng=None, retries: int = 3) -
 
             return parsed, raw
 
+        except ModelUncertainError as e:
+            # Model has no data for this restaurant — skip, don't retry
+            raise
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             logger.warning("Parse error attempt %d/%d: %s", attempt, retries, e)
             if attempt == retries:
@@ -300,13 +332,17 @@ def run(limit=None, min_rating=4.5, min_reviews=100, dry_run=False, force=False,
             stats["ok"] += 1
             logger.info("         -> ✓  %s", data.get("vibe", "")[:90])
             time.sleep(0.3)  # gentle pacing
+        except ModelUncertainError as exc:
+            logger.warning("         -> ⚠  Modell unsicher, übersprungen: %s", exc)
+            stats["skipped"] = stats.get("skipped", 0) + 1
         except Exception as exc:
             logger.error("         -> ✗  %s", exc)
             stats["errors"] += 1
 
     conn.close()
     logger.info("=" * 60)
-    logger.info("Done.  OK: %d | Errors: %d", stats["ok"], stats["errors"])
+    logger.info("Done.  OK: %d | Skipped: %d | Errors: %d",
+                stats["ok"], stats.get("skipped", 0), stats["errors"])
     logger.info("=" * 60)
 
 
