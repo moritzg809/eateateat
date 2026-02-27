@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mallorcaeat
+      POSTGRES_USER: mallorcaeat
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mallorcaeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  scraper:
+    build: ./scraper
+    environment:
+      SERPER_API_KEY: ${SERPER_API_KEY}
+      DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./scraper:/app
+    profiles:
+      - scrape
+
+  enricher:
+    build: ./scraper
+    command: python enrich.py
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./scraper:/app
+    profiles:
+      - enrich
+
+  frontend:
+    build: ./frontend
+    environment:
+      DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
