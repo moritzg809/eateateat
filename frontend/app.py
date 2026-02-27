@@ -8,6 +8,7 @@ app = Flask(__name__)
 
 PHOTOS_DIR  = "/app/static/photos"   # Docker volume mount (same as scraper's /photos)
 MAX_PHOTOS  = 8
+PER_PAGE    = 24
 
 PROFILES = [
     ("family",   "👨‍👩‍👧", "Familie"),
@@ -93,6 +94,7 @@ def index():
     location    = request.args.get("location", "").strip()
     profile_key = request.args.get("profile", "").strip()
     min_score   = int(request.args.get("min_score", 7))
+    page        = max(1, int(request.args.get("page", 1) or 1))
 
     ctx = {
         "total": 0, "top_count": 0, "avg_rating": "–", "enriched_count": 0,
@@ -100,6 +102,7 @@ def index():
         "search": search, "location": location,
         "profile_key": profile_key, "min_score": min_score,
         "profiles": PROFILES,
+        "page": page, "total_pages": 1, "total_filtered": 0, "per_page": PER_PAGE,
         "error": None,
     }
 
@@ -140,6 +143,21 @@ def index():
             where = " AND ".join(conditions)
             order = f"e.{score_col} DESC, t.rating DESC" if score_col else "t.rating DESC, t.rating_count DESC"
 
+            # Count total matching rows for pagination
+            cur.execute(f"""
+                SELECT COUNT(*) AS n
+                FROM top_restaurants t
+                LEFT JOIN gemini_enrichments e ON e.place_id = t.place_id
+                WHERE {where}
+            """, params)
+            total_filtered = cur.fetchone()["n"]
+            total_pages    = max(1, (total_filtered + PER_PAGE - 1) // PER_PAGE)
+            page           = min(page, total_pages)
+            offset         = (page - 1) * PER_PAGE
+            ctx["total_filtered"] = total_filtered
+            ctx["total_pages"]    = total_pages
+            ctx["page"]           = page
+
             cur.execute(f"""
                 SELECT
                     t.*,
@@ -157,8 +175,8 @@ def index():
                 LEFT JOIN restaurants       res ON res.place_id = t.place_id
                 WHERE {where}
                 ORDER BY {order}
-                LIMIT 120
-            """, params)
+                LIMIT %(per_page)s OFFSET %(offset)s
+            """, {**params, "per_page": PER_PAGE, "offset": offset})
 
             rows = cur.fetchall()
             restaurants = []

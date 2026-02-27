@@ -169,7 +169,8 @@
   <div class="flex items-center gap-4 mb-6 pt-2">
     <div class="flex-1 border-t border-ink/10"></div>
     <span class="font-mono text-[11px] text-ink/35 uppercase tracking-widest whitespace-nowrap">
-      {{ restaurants|length }} Restaurant{% if restaurants|length != 1 %}s{% endif %}
+      {{ total_filtered }} Restaurant{% if total_filtered != 1 %}s{% endif %}
+      {% if total_pages > 1 %} · Seite {{ page }}/{{ total_pages }}{% endif %}
       {% if profile_key %}{% for k, e, l in profiles %}{% if k == profile_key %} · {{ e }} {{ l }} ≥ {{ min_score }}{% endif %}{% endfor %}{% endif %}
       {% if search %} · „{{ search }}"{% endif %}
     </span>
@@ -383,6 +384,66 @@
     </div>
     {% endfor %}
   </div>
+
+  <!-- ═══ PAGINATION ══════════════════════════════════════════════ -->
+  {% if total_pages > 1 %}
+  {% set base_args = [] %}
+  {% if search %}{% set base_args = base_args + ['search=' ~ search] %}{% endif %}
+  {% if location %}{% set base_args = base_args + ['location=' ~ location] %}{% endif %}
+  {% if profile_key %}{% set base_args = base_args + ['profile=' ~ profile_key, 'min_score=' ~ min_score] %}{% endif %}
+  {% set base_qs = base_args | join('&') %}
+
+  <nav class="flex items-center justify-center gap-2 mt-10 mb-4 flex-wrap">
+
+    {# Prev button #}
+    {% if page > 1 %}
+    <a href="?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}"
+       class="px-4 py-2 font-mono text-xs text-ink/60 border border-ink/15 rounded-xl
+              hover:border-terra hover:text-terra transition-colors">← Zurück</a>
+    {% else %}
+    <span class="px-4 py-2 font-mono text-xs text-ink/20 border border-ink/8 rounded-xl cursor-not-allowed">← Zurück</span>
+    {% endif %}
+
+    {# Page numbers: show first, window around current, last #}
+    {% set window = 2 %}
+    {% for p in range(1, total_pages + 1) %}
+      {% if p == 1 or p == total_pages or (p >= page - window and p <= page + window) %}
+        {% if loop.index > 1 and p > 1 %}
+          {# Check if we need an ellipsis gap before this page #}
+          {% set prev_p = namespace(val=1) %}
+          {% for pp in range(1, total_pages + 1) %}
+            {% if pp < p and (pp == 1 or pp == total_pages or (pp >= page - window and pp <= page + window)) %}
+              {% set prev_p.val = pp %}
+            {% endif %}
+          {% endfor %}
+          {% if p - prev_p.val > 1 %}
+          <span class="font-mono text-xs text-ink/25 px-1">…</span>
+          {% endif %}
+        {% endif %}
+        {% if p == page %}
+        <span class="px-4 py-2 font-mono text-xs bg-terra text-cream rounded-xl font-medium">{{ p }}</span>
+        {% else %}
+        <a href="?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ p }}"
+           class="px-4 py-2 font-mono text-xs text-ink/55 border border-ink/15 rounded-xl
+                  hover:border-terra hover:text-terra transition-colors">{{ p }}</a>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+
+    {# Next button #}
+    {% if page < total_pages %}
+    <a href="?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}"
+       class="px-4 py-2 font-mono text-xs text-ink/60 border border-ink/15 rounded-xl
+              hover:border-terra hover:text-terra transition-colors">Weiter →</a>
+    {% else %}
+    <span class="px-4 py-2 font-mono text-xs text-ink/20 border border-ink/8 rounded-xl cursor-not-allowed">Weiter →</span>
+    {% endif %}
+
+  </nav>
+  <div class="text-center font-mono text-[10px] text-ink/25 mb-8">
+    {{ (page - 1) * per_page + 1 }}–{{ [page * per_page, total_filtered] | min }} von {{ total_filtered }} Restaurants
+  </div>
+  {% endif %}
 
   {% else %}
   <div class="bg-white rounded-2xl border border-sand p-16 text-center mt-8">
