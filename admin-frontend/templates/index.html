@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MallorcaEat · Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+            alert: '#b91c1c',
+            warn:  '#d97706',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #0f0e0d; color: #f5f0e8; }
+    .table-row:hover { background: rgba(245,240,232,.04); }
+    .badge-overdue { background: rgba(185,28,28,.15); color: #fca5a5; border: 1px solid rgba(185,28,28,.3); }
+    .badge-never   { background: rgba(217,119,6,.15);  color: #fcd34d; border: 1px solid rgba(217,119,6,.3); }
+    .badge-ok      { background: rgba(61,90,71,.2);    color: #86efac; border: 1px solid rgba(61,90,71,.4); }
+    .gauge-fill    { transition: width .5s ease; }
+  </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<!-- ═══════════════════════ HEADER ═══════════════════════ -->
+<header class="border-b border-cream/10">
+  <div class="max-w-6xl mx-auto px-6 py-8">
+    <div class="flex items-end justify-between">
+      <div>
+        <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest mb-2">Admin · Pipeline Status</div>
+        <h1 class="font-serif text-4xl font-bold text-cream">
+          Mallorca<em class="text-terra">Eat</em>
+          <span class="text-cream/20 text-2xl ml-3">/ Admin</span>
+        </h1>
+      </div>
+      <div class="text-right">
+        <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest">Zuletzt aktualisiert</div>
+        <div class="font-mono text-xs text-cream/50 mt-1">
+          {% if last_run_at %}{{ last_run_at.strftime('%d.%m.%Y %H:%M') }} UTC{% else %}—{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+{% if error %}
+<div class="max-w-6xl mx-auto px-6 mt-8">
+  <div class="border border-red-800 bg-red-950 rounded-xl p-6">
+    <h2 class="font-mono text-sm text-red-400 uppercase tracking-wide mb-2">Datenbankfehler</h2>
+    <pre class="font-mono text-xs text-red-300">{{ error }}</pre>
+  </div>
+</div>
+{% else %}
+
+<div class="max-w-6xl mx-auto px-6 py-8 space-y-10">
+
+  <!-- ═══ PIPELINE FUNNEL ═══════════════════════════════════════ -->
+  <section>
+    <h2 class="font-mono text-[10px] text-cream/30 uppercase tracking-widest mb-5">Pipeline Funnel</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {% set funnel_items = [
+        ("Gescrapt",      funnel.scraped,      "text-cream",        "Alle Restaurants in der DB"),
+        ("Qualifiziert",  funnel.qualified,     "text-cream/70",     "Rating ≥ 4.5 · ≥ 100 Reviews"),
+        ("Enriched",      funnel.enriched,      "text-terra",        "Hat Gemini-Bewertungen"),
+        ("Complete",      funnel.complete,      "text-green-400",    "Fertig · wird angezeigt"),
+        ("Disqualified",  funnel.disqualified,  "text-warn",         "Unter Qualitätsschwelle"),
+        ("Inactive",      funnel.inactive,      "text-red-400",      "Geschlossen / nicht mehr aktiv"),
+      ] %}
+      {% for label, count, color, desc in funnel_items %}
+      <div class="border border-cream/10 rounded-xl p-4 bg-cream/[.03]">
+        <div class="font-serif text-3xl font-bold {{ color }}">{{ count }}</div>
+        <div class="font-mono text-[10px] text-cream/40 uppercase tracking-widest mt-1">{{ label }}</div>
+        <div class="font-sans text-[10px] text-cream/25 mt-1 leading-tight">{{ desc }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ═══ DAILY CAP + DETAILS COVERAGE ═════════════════════════ -->
+  <div class="grid sm:grid-cols-2 gap-5">
+
+    <!-- Daily enrichment gauge -->
+    <section class="border border-cream/10 rounded-xl p-5 bg-cream/[.03]">
+      <h2 class="font-mono text-[10px] text-cream/30 uppercase tracking-widest mb-4">Gemini-Enrichment · Today</h2>
+      {% set pct = [(today_enrichments / daily_limit * 100)|round|int, 100]|min %}
+      <div class="flex items-end gap-3 mb-3">
+        <div class="font-serif text-4xl font-bold {% if pct >= 90 %}text-red-400{% elif pct >= 70 %}text-warn{% else %}text-terra{% endif %}">
+          {{ today_enrichments }}
+        </div>
+        <div class="font-mono text-sm text-cream/30 pb-1">/ {{ daily_limit }} heute</div>
+      </div>
+      <div class="h-2 bg-cream/10 rounded-full overflow-hidden">
+        <div class="gauge-fill h-full rounded-full
+          {% if pct >= 90 %}bg-red-500{% elif pct >= 70 %}bg-amber-500{% else %}bg-terra{% endif %}"
+          style="width: {{ pct }}%"></div>
+      </div>
+      <div class="font-mono text-[10px] text-cream/25 mt-2">{{ daily_limit - today_enrichments }} verbleibend heute</div>
+    </section>
+
+    <!-- SerpAPI details coverage -->
+    <section class="border border-cream/10 rounded-xl p-5 bg-cream/[.03]">
+      <h2 class="font-mono text-[10px] text-cream/30 uppercase tracking-widest mb-4">SerpAPI Details · Complete Restaurants</h2>
+      {% set with_d = details_coverage.get('with_details', 0) %}
+      {% set without_d = details_coverage.get('without_details', 0) %}
+      {% set total_d = with_d + without_d %}
+      {% set dpct = [(with_d / total_d * 100)|round|int, 100]|min if total_d > 0 else 0 %}
+      <div class="flex items-end gap-3 mb-3">
+        <div class="font-serif text-4xl font-bold text-sage">{{ with_d }}</div>
+        <div class="font-mono text-sm text-cream/30 pb-1">/ {{ total_d }} complete</div>
+      </div>
+      <div class="h-2 bg-cream/10 rounded-full overflow-hidden">
+        <div class="gauge-fill h-full bg-sage rounded-full" style="width: {{ dpct }}%"></div>
+      </div>
+      <div class="font-mono text-[10px] text-cream/25 mt-2">{{ without_d }} ohne Details · {{ verify_due_count }} zur Re-Verifikation fällig</div>
+    </section>
+  </div>
+
+  <!-- ═══ SEARCH QUERIES TABLE ══════════════════════════════════ -->
+  <section>
+    <div class="flex items-center gap-4 mb-5">
+      <h2 class="font-mono text-[10px] text-cream/30 uppercase tracking-widest">Suchanfragen · {{ runs_total }} total</h2>
+      {% if runs_overdue > 0 %}
+      <span class="badge-overdue font-mono text-[10px] px-2 py-0.5 rounded-full">{{ runs_overdue }} überfällig</span>
+      {% endif %}
+    </div>
+
+    <div class="border border-cream/10 rounded-xl overflow-hidden">
+      <div class="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-0 text-[10px] font-mono text-cream/25 uppercase tracking-widest border-b border-cream/10 px-4 py-2">
+        <span>Query</span>
+        <span>Location</span>
+        <span class="text-right">Ergebnisse</span>
+        <span class="text-right">Letzte Ausführung</span>
+        <span class="text-right">Status</span>
+      </div>
+      {% for run in pipeline_runs %}
+      <div class="table-row grid grid-cols-[1fr_1fr_auto_auto_auto] gap-0 items-center border-b border-cream/[.06] px-4 py-2.5 last:border-0">
+        <span class="font-sans text-xs text-cream/70 truncate pr-4">{{ run.query }}</span>
+        <span class="font-sans text-xs text-cream/50 truncate pr-4">{{ run.location }}</span>
+        <span class="font-mono text-xs text-cream/40 text-right pr-6">{{ run.result_count }}</span>
+        <span class="font-mono text-[11px] text-cream/40 text-right pr-4">
+          {% if run.last_run_at %}{{ run.last_run_at.strftime('%d.%m.%y') }}{% else %}—{% endif %}
+        </span>
+        <span class="text-right">
+          {% if run.freshness == 'never' %}
+          <span class="badge-never font-mono text-[10px] px-2 py-0.5 rounded-full">Noch nie</span>
+          {% elif run.freshness == 'overdue' %}
+          <span class="badge-overdue font-mono text-[10px] px-2 py-0.5 rounded-full">Überfällig</span>
+          {% else %}
+          <span class="badge-ok font-mono text-[10px] px-2 py-0.5 rounded-full">{{ run.days_until_due }}d</span>
+          {% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ═══ INACTIVE RESTAURANTS ══════════════════════════════════ -->
+  {% if inactive_restaurants %}
+  <section>
+    <h2 class="font-mono text-[10px] text-cream/30 uppercase tracking-widest mb-5">Inaktive Restaurants</h2>
+    <div class="border border-red-900/40 rounded-xl overflow-hidden">
+      {% for r in inactive_restaurants %}
+      <div class="table-row flex items-center gap-4 border-b border-red-900/20 px-4 py-3 last:border-0">
+        <span class="text-red-400 text-sm shrink-0">🚫</span>
+        <div class="flex-1 min-w-0">
+          <div class="font-sans text-sm text-cream/70 truncate">{{ r.name }}</div>
+          <div class="font-mono text-[10px] text-cream/25 truncate">{{ r.address }}</div>
+        </div>
+        <div class="shrink-0 text-right">
+          <div class="font-mono text-xs text-red-400">{{ r.rating }}★ · {{ r.rating_count }} Reviews</div>
+          {% if r.last_verified_at %}
+          <div class="font-mono text-[10px] text-cream/25">Verifiziert: {{ r.last_verified_at.strftime('%d.%m.%Y') }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- ═══ DOCKER COMMANDS ═══════════════════════════════════════ -->
+  <section>
+    <h2 class="font-mono text-[10px] text-cream/30 uppercase tracking-widest mb-4">Pipeline Commands</h2>
+    <div class="grid sm:grid-cols-2 gap-3">
+      {% set commands = [
+        ("Vollständiger Durchlauf",       "docker compose --profile pipeline run --rm pipeline"),
+        ("Nur Suche (neue Restaurants)",  "docker compose --profile pipeline run --rm pipeline --stages search"),
+        ("Nur Enrichment (Gemini)",       "docker compose --profile pipeline run --rm pipeline --stages qualify,enrich,completeness"),
+        ("Nur Details (SerpAPI)",         "docker compose --profile pipeline run --rm pipeline --stages details"),
+        ("Re-Verifikation (alte Eintr.)", "docker compose --profile pipeline run --rm pipeline --stages verify"),
+        ("Force alle Suchen neu",        "docker compose --profile pipeline run --rm pipeline --stages search --force-search"),
+        ("Dry Run (kein API-Call)",       "docker compose --profile pipeline run --rm pipeline --dry-run"),
+        ("Status prüfen",                "docker compose --profile pipeline run --rm pipeline --stages qualify --dry-run"),
+      ] %}
+      {% for label, cmd in commands %}
+      <div class="border border-cream/10 rounded-xl p-3 bg-cream/[.02]">
+        <div class="font-sans text-[11px] text-cream/40 mb-1.5">{{ label }}</div>
+        <code class="font-mono text-[11px] text-terra/80 break-all">{{ cmd }}</code>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+</div>
+{% endif %}
+
+<!-- Footer -->
+<footer class="border-t border-cream/10 py-5 mt-10">
+  <div class="max-w-6xl mx-auto px-6 flex items-center justify-between flex-wrap gap-3">
+    <span class="font-mono text-[10px] text-cream/20">MallorcaEat Admin · Port 8081</span>
+    <span class="font-mono text-[10px] text-cream/15">
+      {% if now %}{{ now.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>

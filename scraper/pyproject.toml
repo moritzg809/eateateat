@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "mallorcaeat-scraper"
+version = "0.1.0"
+description = "Mallorcaeat restaurant scraper, enricher and pipeline"
+authors = []
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+psycopg2-binary = "^2.9"
+requests = "^2.31"
+
+[tool.poetry.group.dev.dependencies]
+# add dev tools here if needed
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

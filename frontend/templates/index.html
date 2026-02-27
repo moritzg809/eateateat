@@ -3,201 +3,277 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MallorcaEat – Restaurant Explorer</title>
+  <title>MallorcaEat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    body { background-color: #fdf6ec; }
-    .card { transition: transform .15s, box-shadow .15s; }
-    .card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.12); }
-    .score-pill { font-size: 11px; line-height: 1; }
-    .profile-btn.active { background: #c4622d; color: white; border-color: #c4622d; }
+    body { background: #f5f0e8; color: #0f0e0d; }
+
+    .card { transition: transform .2s ease, box-shadow .2s ease; }
+    .card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(15,14,13,.13); }
+
+    .pill { transition: background .15s, color .15s, border-color .15s; }
+    .pill.active { background: #f5f0e8; color: #0f0e0d; border-color: #f5f0e8; }
+
+    .score-hi  { background: #d4edda; color: #1a5c2e; }
+    .score-mid { background: #fff3cd; color: #7a5500; }
+    .score-lo  { background: #ebebeb; color: #555; }
+    .score-sel { outline: 2px solid #c4622d; outline-offset: 1px; }
+
+    .filter-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+    .filter-scroll::-webkit-scrollbar { display: none; }
+
+    @media (min-width: 1024px) {
+      .card-featured { grid-column: span 2; }
+      .card-featured .card-img { height: 340px; }
+    }
   </style>
 </head>
-<body class="min-h-screen">
+<body class="min-h-screen font-sans">
 
-<!-- ── Header ── -->
-<header style="background: linear-gradient(135deg,#c4622d 0%,#e8954a 50%,#1a6b8a 100%)">
-  <div class="max-w-7xl mx-auto px-4 py-7 text-white flex items-center gap-4">
-    <span class="text-5xl">🌴</span>
-    <div>
-      <h1 class="text-4xl font-extrabold tracking-tight">MallorcaEat</h1>
-      <p class="text-white/75 text-lg mt-0.5">Die besten Restaurants auf Mallorca</p>
+<!-- ═══════════════════════ HEADER ═══════════════════════ -->
+<header class="bg-ink text-cream">
+  <div class="max-w-7xl mx-auto px-5 pt-10 pb-8">
+
+    <div class="flex items-center justify-between mb-8 border-b border-cream/20 pb-4">
+      <span class="font-mono text-xs tracking-widest text-cream/40 uppercase">Restaurant Guide</span>
+      <span class="font-mono text-xs text-cream/30">Mallorca · España</span>
+    </div>
+
+    <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8">
+      <div>
+        <h1 class="font-serif text-[clamp(3.5rem,11vw,8rem)] leading-[.88] tracking-tight">
+          Mallorca<br><em class="text-terra">Eat</em>
+        </h1>
+        <p class="mt-5 font-sans font-light text-cream/55 text-lg max-w-sm leading-relaxed">
+          Die besten Tische der Insel — kuratiert, bewertet, ehrlich.
+        </p>
+      </div>
+
+      <div class="flex gap-8 shrink-0 pb-1">
+        <div>
+          <div class="font-serif text-5xl font-bold text-cream">{{ top_count }}</div>
+          <div class="font-mono text-[10px] text-cream/35 uppercase tracking-widest mt-1">Top Spots</div>
+        </div>
+        <div class="w-px bg-cream/10"></div>
+        <div>
+          <div class="font-serif text-5xl font-bold text-terra">{{ enriched_count }}</div>
+          <div class="font-mono text-[10px] text-cream/35 uppercase tracking-widest mt-1">KI-analysiert</div>
+        </div>
+        <div class="w-px bg-cream/10"></div>
+        <div>
+          <div class="font-serif text-5xl font-bold text-cream">{{ avg_rating }}</div>
+          <div class="font-mono text-[10px] text-cream/35 uppercase tracking-widest mt-1">Ø Bewertung</div>
+        </div>
+      </div>
     </div>
   </div>
 </header>
 
-<!-- ── Stats ── -->
-<div class="max-w-7xl mx-auto px-4 mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
-  <div class="bg-white rounded-2xl shadow p-5 text-center border-t-4 border-amber-400">
-    <div class="text-3xl font-black text-amber-500">{{ total }}</div>
-    <div class="text-gray-500 text-sm mt-1">Restaurants erfasst</div>
-  </div>
-  <div class="bg-white rounded-2xl shadow p-5 text-center border-t-4 border-orange-500">
-    <div class="text-3xl font-black text-orange-500">{{ top_count }}</div>
-    <div class="text-gray-500 text-sm mt-1">Top-Spots <span class="text-xs">(≥4.5★ ≥100 Rez.)</span></div>
-  </div>
-  <div class="bg-white rounded-2xl shadow p-5 text-center border-t-4 border-sky-500">
-    <div class="text-3xl font-black text-sky-600">{{ avg_rating }}</div>
-    <div class="text-gray-500 text-sm mt-1">Ø Bewertung</div>
-  </div>
-  <div class="bg-white rounded-2xl shadow p-5 text-center border-t-4 border-emerald-500">
-    <div class="text-3xl font-black text-emerald-600">{{ enriched_count }}</div>
-    <div class="text-gray-500 text-sm mt-1">KI-analysiert</div>
-  </div>
-</div>
-
-<!-- ── Profile Filter ── -->
-<div class="max-w-7xl mx-auto px-4 mt-5">
-  <div class="bg-white rounded-2xl shadow p-4">
-    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-3">Für wen planst du?</p>
-    <div class="flex flex-wrap gap-2">
+<!-- ═══════════════════════ STICKY NAV FILTER ═══════════════════════ -->
+<div class="bg-ink border-t border-cream/10 sticky top-0 z-30">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="filter-scroll flex gap-2 overflow-x-auto py-3">
       <a href="{{ url_for('index', search=search, location=location) }}"
-         class="profile-btn {{ 'active' if not profile_key else '' }} border rounded-full px-3 py-1.5 text-sm font-medium text-gray-600 border-gray-200 hover:border-orange-400 transition">
+         class="pill shrink-0 border border-cream/20 rounded-full px-4 py-1.5 font-mono text-xs text-cream/50 hover:border-cream/50 {{ 'active' if not profile_key else '' }}">
         Alle
       </a>
       {% for key, emoji, label in profiles %}
       <a href="{{ url_for('index', search=search, location=location, profile=key, min_score=min_score) }}"
-         class="profile-btn {{ 'active' if profile_key == key else '' }} border rounded-full px-3 py-1.5 text-sm font-medium text-gray-600 border-gray-200 hover:border-orange-400 transition">
-        {{ emoji }} {{ label }}
+         class="pill shrink-0 border border-cream/20 rounded-full px-4 py-1.5 font-mono text-xs text-cream/50 hover:border-cream/50 {{ 'active' if profile_key == key else '' }}">
+        {{ emoji }}&nbsp;{{ label }}
       </a>
       {% endfor %}
     </div>
-
-    {% if profile_key %}
-    <div class="mt-3 flex items-center gap-3">
-      <span class="text-xs text-gray-400">Mindest-Score:</span>
-      {% for s in [6, 7, 8, 9] %}
-      <a href="{{ url_for('index', search=search, location=location, profile=profile_key, min_score=s) }}"
-         class="text-xs px-2 py-1 rounded-full border {{ 'bg-orange-500 text-white border-orange-500' if min_score == s else 'border-gray-200 text-gray-500 hover:border-orange-400' }} transition">
-        ≥ {{ s }}
-      </a>
-      {% endfor %}
-    </div>
-    {% endif %}
   </div>
 </div>
 
-<!-- ── Search ── -->
-<div class="max-w-7xl mx-auto px-4 mt-4">
-  <form method="get" class="bg-white rounded-2xl shadow p-4 flex flex-wrap gap-3 items-center">
+<!-- ═══════════════════════ SEARCH + SCORE ═══════════════════════ -->
+<div class="max-w-7xl mx-auto px-5 mt-5 flex flex-wrap items-center gap-3">
+
+  {% if profile_key %}
+  <div class="flex items-center gap-1.5 bg-white rounded-xl px-3 py-2 shadow-sm border border-sand">
+    <span class="font-mono text-[10px] text-ink/35 uppercase tracking-widest mr-1">Score ≥</span>
+    {% for s in [6, 7, 8, 9] %}
+    <a href="{{ url_for('index', search=search, location=location, profile=profile_key, min_score=s) }}"
+       class="font-mono text-xs px-2.5 py-1 rounded-lg transition
+              {{ 'bg-ink text-cream' if min_score == s else 'text-ink/40 hover:bg-sand' }}">
+      {{ s }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="get" class="flex flex-1 min-w-[200px] items-center gap-2 bg-white rounded-xl px-3 py-2 shadow-sm border border-sand">
     {% if profile_key %}<input type="hidden" name="profile" value="{{ profile_key }}">{% endif %}
     {% if min_score != 7 %}<input type="hidden" name="min_score" value="{{ min_score }}">{% endif %}
+    <span class="text-ink/25 text-base">⌕</span>
     <input type="text" name="search" value="{{ search }}"
-           placeholder="🔍  Restaurant suchen …"
-           class="flex-1 min-w-[180px] border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+           placeholder="Restaurant suchen …"
+           class="flex-1 text-sm font-sans outline-none bg-transparent placeholder-ink/25">
     {% if locations %}
-    <select name="location"
-            class="border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
-      <option value="">📍 Alle Orte</option>
+    <select name="location" class="text-sm font-sans text-ink/50 bg-transparent outline-none border-l border-sand pl-3">
+      <option value="">Alle Orte</option>
       {% for loc in locations %}
       <option value="{{ loc }}" {% if loc == location %}selected{% endif %}>{{ loc }}</option>
       {% endfor %}
     </select>
     {% endif %}
     <button type="submit"
-            class="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-6 py-2.5 rounded-xl transition text-sm">
-      Filtern
+            class="bg-terra text-cream font-mono text-xs px-3 py-1.5 rounded-lg hover:bg-rust transition shrink-0">
+      Los
     </button>
     {% if search or location %}
     <a href="{{ url_for('index', profile=profile_key or '', min_score=min_score) }}"
-       class="text-gray-400 hover:text-gray-600 text-sm px-1">✕</a>
+       class="text-ink/25 hover:text-ink/60 text-sm px-1">✕</a>
     {% endif %}
   </form>
 </div>
 
-<!-- ── Results ── -->
-<main class="max-w-7xl mx-auto px-4 py-5 pb-14">
+<!-- ═══════════════════════ MAIN GRID ═══════════════════════ -->
+<main class="max-w-7xl mx-auto px-5 py-6 pb-20">
 
   {% if error %}
   <div class="bg-red-50 border border-red-200 rounded-2xl p-10 text-center">
-    <div class="text-5xl mb-3">⚠️</div>
-    <h2 class="text-xl font-bold text-red-700">Datenbankfehler</h2>
-    <pre class="mt-3 text-sm text-red-500 bg-red-100 rounded-xl p-4 text-left overflow-x-auto">{{ error }}</pre>
+    <div class="font-serif text-5xl mb-3 text-red-300">!</div>
+    <h2 class="font-serif text-xl font-bold text-red-700">Datenbankfehler</h2>
+    <pre class="mt-3 text-sm text-red-500 bg-red-100 rounded-xl p-4 text-left overflow-x-auto font-mono">{{ error }}</pre>
   </div>
 
   {% elif restaurants %}
-  <p class="text-sm text-gray-400 mb-4">
-    <strong class="text-gray-600">{{ restaurants|length }}</strong> Restaurant{% if restaurants|length != 1 %}s{% endif %}
-    {% if profile_key %}
-      {% for k, e, l in profiles %}{% if k == profile_key %} · gefiltert nach <strong>{{ e }} {{ l }}</strong> (Score ≥ {{ min_score }}){% endif %}{% endfor %}
-    {% endif %}
-    {% if search %} · Suche: „<strong>{{ search }}</strong>"{% endif %}
-  </p>
 
+  <!-- Count / filter label -->
+  <div class="flex items-center gap-4 mb-6 pt-2">
+    <div class="flex-1 border-t border-ink/10"></div>
+    <span class="font-mono text-[11px] text-ink/35 uppercase tracking-widest whitespace-nowrap">
+      {{ restaurants|length }} Restaurant{% if restaurants|length != 1 %}s{% endif %}
+      {% if profile_key %}{% for k, e, l in profiles %}{% if k == profile_key %} · {{ e }} {{ l }} ≥ {{ min_score }}{% endif %}{% endfor %}{% endif %}
+      {% if search %} · „{{ search }}"{% endif %}
+    </span>
+    <div class="flex-1 border-t border-ink/10"></div>
+  </div>
+
+  <!-- Cards -->
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
     {% for r in restaurants %}
 
-    {# collect profile scores for display #}
     {% set scores = [
-      ("family",   "👨‍👩‍👧", "Familie",    r.family_score),
-      ("date",     "💑",    "Date Night", r.date_score),
-      ("friends",  "👯",    "Friends",    r.friends_score),
-      ("solo",     "🧍",    "Solo",       r.solo_score),
-      ("relaxed",  "😌",    "Entspannt",  r.relaxed_score),
-      ("party",    "🎉",    "Party",      r.party_score),
-      ("special",  "✨",    "Besonders",  r.special_score),
-      ("foodie",   "🍽️",   "Foodie",     r.foodie_score),
-      ("lingering","☕",    "Verweilen",  r.lingering_score),
-      ("unique",   "💎",    "Geheimtipp", r.unique_score),
-      ("dresscode","👔",    "Dress Code", r.dresscode_score),
+      ("family",    "👨‍👩‍👧", "Familie",    r.family_score),
+      ("date",      "💑",    "Date Night", r.date_score),
+      ("friends",   "👯",    "Friends",    r.friends_score),
+      ("solo",      "🧍",    "Solo",       r.solo_score),
+      ("relaxed",   "😌",    "Entspannt",  r.relaxed_score),
+      ("party",     "🎉",    "Party",      r.party_score),
+      ("special",   "✨",    "Besonders",  r.special_score),
+      ("foodie",    "🍽️",   "Foodie",     r.foodie_score),
+      ("lingering", "☕",    "Verweilen",  r.lingering_score),
+      ("unique",    "💎",    "Geheimtipp", r.unique_score),
+      ("dresscode", "👔",    "Dress Code", r.dresscode_score),
     ] %}
 
-    <div class="card bg-white rounded-2xl shadow overflow-hidden flex flex-col">
+    <div class="card bg-white rounded-2xl overflow-hidden flex flex-col border border-sand {{ 'card-featured' if loop.first else '' }}">
 
-      <!-- Thumbnail -->
+      <!-- Image -->
       {% if r.thumbnail_url %}
-      <div class="h-44 overflow-hidden bg-gray-100">
+      <div class="card-img h-52 overflow-hidden bg-sand relative">
         <img src="{{ r.thumbnail_url }}" alt="{{ r.name }}" class="w-full h-full object-cover">
+        {% if r.price_level %}
+        <span class="absolute top-3 right-3 font-mono text-xs bg-ink/75 text-cream px-2.5 py-0.5 rounded-full backdrop-blur-sm">{{ r.price_level }}</span>
+        {% endif %}
       </div>
       {% else %}
-      <div class="h-44 flex items-center justify-center text-5xl"
-           style="background:linear-gradient(135deg,#fde68a,#fdba74)">🍽️</div>
+      <div class="card-img h-52 bg-gradient-to-br from-sand to-cream flex items-center justify-center relative">
+        <span class="text-5xl opacity-30">🍽️</span>
+        {% if r.price_level %}
+        <span class="absolute top-3 right-3 font-mono text-xs bg-ink text-cream px-2 py-0.5 rounded-full">{{ r.price_level }}</span>
+        {% endif %}
+      </div>
       {% endif %}
 
-      <div class="p-4 flex flex-col flex-1">
+      <!-- Body -->
+      <div class="p-5 flex flex-col flex-1">
 
-        <!-- Name + price -->
-        <div class="flex justify-between items-start gap-2">
-          <h3 class="font-bold text-gray-800 leading-snug">{{ r.name }}</h3>
-          {% if r.price_level %}
-          <span class="shrink-0 text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">{{ r.price_level }}</span>
+        <!-- Name + rating -->
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <h3 class="font-serif text-xl font-bold text-ink leading-tight">{{ r.name }}</h3>
+          <div class="shrink-0 flex items-center gap-1 bg-ink text-cream rounded-full pl-2.5 pr-2.5 py-0.5">
+            <span class="font-mono text-xs font-bold
+              {% if (r.rating * 20)|round|int >= 94 %}text-green-400
+              {% elif (r.rating * 20)|round|int >= 88 %}text-terra
+              {% else %}text-cream/70{% endif %}">
+              {{ (r.rating * 20)|round|int }}
+            </span>
+            <span class="font-mono text-[9px] text-cream/35">/100</span>
+          </div>
+        </div>
+
+        <!-- City · type · review count -->
+        <div class="flex items-center gap-2 flex-wrap mb-3">
+          {% if r.city %}
+          <span class="font-mono text-[10px] text-ink/45 flex items-center gap-0.5">
+            <svg class="inline w-2.5 h-2.5 opacity-50 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+            {{ r.city }}
+          </span>
           {% endif %}
+          <span class="font-mono text-[10px] text-terra/70 border border-terra/20 bg-terra/5 px-2 py-0.5 rounded-full leading-none">{{ r.type_emoji }} {{ r.type_label }}</span>
+          <span class="font-mono text-[10px] text-ink/25 ml-auto">{{ r.rating_count | int }} ✦</span>
         </div>
 
-        <!-- Vibe (Gemini one-liner) -->
+        <!-- Vibe -->
         {% if r.vibe %}
-        <p class="text-gray-500 text-xs italic mt-1 leading-snug">„{{ r.vibe }}"</p>
+        <p class="font-sans text-xs italic text-ink/50 leading-snug mb-3 line-clamp-2">„{{ r.vibe }}"</p>
         {% endif %}
 
-        <!-- Stars + rating -->
-        <div class="flex items-center mt-2 gap-1">
-          {% for i in range(5) %}
-          <span class="text-lg leading-none {{ 'text-amber-400' if i < r.rating|int else 'text-gray-200' }}">★</span>
+        <!-- Atmosphere + highlight tags (SerpAPI) -->
+        {% if r.atmosphere or r.highlights %}
+        <div class="flex flex-wrap gap-1 mb-3">
+          {% for tag in (r.atmosphere or [])[:3] %}
+          <span class="font-mono text-[10px] text-ink/45 bg-sand/50 border border-sand px-2 py-0.5 rounded-full">{{ tag }}</span>
           {% endfor %}
-          <span class="ml-1 font-bold text-gray-700 text-sm">{{ r.rating }}</span>
-          <span class="text-gray-400 text-xs">({{ r.rating_count | int }})</span>
+          {% for tag in (r.highlights or [])[:2] %}
+          <span class="font-mono text-[10px] text-sage/80 border border-sage/20 bg-sage/5 px-2 py-0.5 rounded-full">✦ {{ tag }}</span>
+          {% endfor %}
         </div>
-
-        <!-- Categories -->
-        {% if r.categories %}
-        <div class="flex flex-wrap gap-1 mt-2">
+        {% elif r.categories %}
+        <div class="flex flex-wrap gap-1 mb-3">
           {% for cat in r.categories[:3] %}
-          <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{{ cat }}</span>
+          <span class="font-mono text-[10px] uppercase tracking-wide text-terra/70 border border-terra/15 px-2 py-0.5 rounded-full">{{ cat }}</span>
           {% endfor %}
         </div>
         {% endif %}
 
-        <!-- Profile scores (only if enriched) -->
+        <!-- Profile scores -->
         {% if r.vibe %}
-        <div class="mt-3 flex flex-wrap gap-1">
+        <div class="flex flex-wrap gap-1 mb-3">
           {% for key, emoji, label, score in scores %}
           {% if score %}
           <span title="{{ label }}: {{ score }}/10"
-                class="score-pill inline-flex items-center gap-0.5 px-2 py-1 rounded-full font-semibold
-                       {{ 'bg-emerald-100 text-emerald-700' if score >= 8
-                          else 'bg-amber-100 text-amber-700' if score >= 6
-                          else 'bg-gray-100 text-gray-500' }}
-                       {{ 'ring-2 ring-orange-400' if profile_key == key }}">
+                class="font-mono text-[10px] px-2 py-0.5 rounded-full font-medium
+                       {{ 'score-hi' if score >= 8 else 'score-mid' if score >= 6 else 'score-lo' }}
+                       {{ 'score-sel' if profile_key == key }}">
             {{ emoji }} {{ score }}
           </span>
           {% endif %}
@@ -206,36 +282,57 @@
 
         <!-- Must order -->
         {% if r.must_order %}
-        <div class="mt-2 flex items-start gap-1.5">
-          <span class="text-orange-500 text-sm shrink-0 mt-0.5">🍴</span>
-          <p class="text-xs text-gray-600 leading-snug">{{ r.must_order }}</p>
+        <div class="flex items-start gap-1.5 mb-2">
+          <span class="text-terra text-xs shrink-0 mt-0.5">🍴</span>
+          <p class="font-sans text-xs text-ink/60 leading-snug">{{ r.must_order }}</p>
         </div>
         {% endif %}
 
-        <!-- Summary (collapsible) -->
-        {% if r.summary_de %}
-        <details class="mt-2 group">
-          <summary class="text-xs text-sky-600 cursor-pointer hover:text-sky-800 select-none list-none flex items-center gap-1">
-            <span class="group-open:hidden">▶ Warum hingehen?</span>
-            <span class="hidden group-open:inline">▼ Warum hingehen?</span>
+        <!-- Collapsible: summary + popular_for + offerings -->
+        {% if r.summary_de or r.popular_for or r.offerings %}
+        <details class="mt-1 group">
+          <summary class="font-mono text-[10px] uppercase tracking-widest text-terra/70 cursor-pointer hover:text-terra select-none list-none flex items-center gap-1">
+            <span class="group-open:hidden">▸ Mehr erfahren</span>
+            <span class="hidden group-open:inline">▾ Weniger</span>
           </summary>
-          <p class="text-xs text-gray-500 mt-1 leading-relaxed">{{ r.summary_de }}</p>
+          <div class="mt-2 space-y-2">
+            {% if r.summary_de %}
+            <p class="font-sans text-xs text-ink/55 leading-relaxed border-l-2 border-terra/25 pl-3">{{ r.summary_de }}</p>
+            {% endif %}
+            {% if r.popular_for %}
+            <div class="flex flex-wrap gap-1">
+              {% for t in r.popular_for %}
+              <span class="font-mono text-[10px] bg-cream border border-sand px-2 py-0.5 rounded-full text-ink/55">🕐 {{ t }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if r.offerings %}
+            <div class="flex flex-wrap gap-1">
+              {% for t in (r.offerings or [])[:8] %}
+              <span class="font-mono text-[10px] bg-cream border border-sand px-2 py-0.5 rounded-full text-ink/55">🍹 {{ t }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
         </details>
         {% endif %}
         {% endif %}
 
-        <!-- Address + links -->
-        {% if r.address %}
-        <p class="text-gray-400 text-xs mt-3 leading-snug">📍 {{ r.address }}</p>
-        {% endif %}
-        <div class="mt-auto pt-3 flex gap-3 flex-wrap">
-          {% if r.website %}
-          <a href="{{ r.website }}" target="_blank" rel="noopener"
-             class="text-xs text-sky-600 hover:underline font-medium">🌐 Website</a>
+        <div class="flex-1"></div>
+
+        <!-- Footer -->
+        <div class="mt-4 pt-3 border-t border-sand flex items-center justify-between gap-2 flex-wrap">
+          {% if r.address %}
+          <p class="font-mono text-[10px] text-ink/30 leading-snug flex-1 min-w-0 truncate">
+            📍 {{ r.address.split(',')[0] }}
+          </p>
           {% endif %}
-          {% if r.phone %}
-          <span class="text-xs text-gray-400">📞 {{ r.phone }}</span>
-          {% endif %}
+          <div class="flex gap-3 shrink-0">
+            {% if r.website %}
+            <a href="{{ r.website }}" target="_blank" rel="noopener"
+               class="font-mono text-[10px] text-terra hover:text-rust uppercase tracking-wide">Web ↗</a>
+            {% endif %}
+          </div>
         </div>
 
       </div>
@@ -244,24 +341,33 @@
   </div>
 
   {% else %}
-  <div class="bg-white rounded-2xl shadow p-14 text-center mt-4">
-    <div class="text-7xl mb-4">🏖️</div>
+  <div class="bg-white rounded-2xl border border-sand p-16 text-center mt-8">
+    <div class="font-serif text-7xl mb-4 opacity-10">🏖</div>
     {% if profile_key %}
-    <h2 class="text-2xl font-bold text-gray-700">Keine Treffer für dieses Profil</h2>
-    <p class="text-gray-400 mt-2">Probiere einen niedrigeren Mindest-Score oder ein anderes Profil.</p>
+    <h2 class="font-serif text-2xl font-bold text-ink mb-2">Keine Treffer</h2>
+    <p class="font-sans text-sm text-ink/40">Niedrigeren Mindest-Score wählen oder Profil wechseln.</p>
     {% elif enriched_count == 0 %}
-    <h2 class="text-2xl font-bold text-gray-700">Noch keine KI-Analysen vorhanden</h2>
-    <p class="text-gray-400 mt-2">Starte den Enricher, um Restaurants mit Gemini zu analysieren:</p>
-    <code class="block mt-4 bg-gray-50 border rounded-xl p-4 text-sm text-left max-w-lg mx-auto font-mono text-gray-600">
+    <h2 class="font-serif text-2xl font-bold text-ink mb-2">Noch keine KI-Analysen</h2>
+    <p class="font-sans text-sm text-ink/40 mb-4">Starte den Enricher:</p>
+    <code class="block bg-ink text-cream text-xs font-mono rounded-xl p-4 text-left max-w-lg mx-auto">
       docker compose --profile enrich run --rm enricher --limit 10 --dry-run
     </code>
     {% else %}
-    <h2 class="text-2xl font-bold text-gray-700">Keine Restaurants gefunden</h2>
-    <p class="text-gray-400 mt-2">Versuche andere Suchbegriffe oder Filter.</p>
+    <h2 class="font-serif text-2xl font-bold text-ink mb-2">Keine Restaurants gefunden</h2>
+    <p class="font-sans text-sm text-ink/40">Andere Suchbegriffe oder Filter versuchen.</p>
     {% endif %}
   </div>
   {% endif %}
 
 </main>
+
+<!-- Footer -->
+<footer class="bg-ink text-cream/25 py-5 mt-4">
+  <div class="max-w-7xl mx-auto px-5 flex items-center justify-between flex-wrap gap-3">
+    <span class="font-mono text-xs">MallorcaEat · {{ total }} Restaurants</span>
+    <span class="font-serif italic text-cream/20 text-sm">La mejor mesa te espera.</span>
+  </div>
+</footer>
+
 </body>
 </html>

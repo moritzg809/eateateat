@@ -16,10 +16,11 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Scraper: Step 1 — Serper search ────────────────────────────────────────
   scraper:
     build: ./scraper
     environment:
-      SERPER_API_KEY: ${SERPER_API_KEY}
+      SERPER_API_KEYS: ${SERPER_API_KEYS:-${SERPER_API_KEY}}
       DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
     depends_on:
       postgres:
@@ -29,6 +30,7 @@ services:
     profiles:
       - scrape
 
+  # ── Enricher: Step 2 — Gemini AI scoring ───────────────────────────────────
   enricher:
     build: ./scraper
     command: python enrich.py
@@ -43,12 +45,56 @@ services:
     profiles:
       - enrich
 
+  # ── Detail scraper: Step 3 — SerpAPI place details ─────────────────────────
+  detail-scraper:
+    build: ./scraper
+    command: python detail_scrape.py
+    environment:
+      SERPAPI_API_KEYS: ${SERPAPI_API_KEYS:-${SERPAPI_API_KEY}}
+      DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./scraper:/app
+    profiles:
+      - detail
+
+  # ── Pipeline: unified orchestrator (all stages) ────────────────────────────
+  pipeline:
+    build: ./scraper
+    entrypoint: ["python", "pipeline.py"]
+    environment:
+      SERPER_API_KEYS: ${SERPER_API_KEYS:-${SERPER_API_KEY}}
+      SERPAPI_API_KEYS: ${SERPAPI_API_KEYS:-${SERPAPI_API_KEY}}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./scraper:/app
+    profiles:
+      - pipeline
+
+  # ── Main frontend: restaurant discovery ────────────────────────────────────
   frontend:
     build: ./frontend
     environment:
       DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
     ports:
       - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Admin frontend: pipeline status dashboard ──────────────────────────────
+  admin-frontend:
+    build: ./admin-frontend
+    environment:
+      DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+    ports:
+      - "8081:8081"
     depends_on:
       postgres:
         condition: service_healthy

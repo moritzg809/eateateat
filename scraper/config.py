@@ -18,6 +18,9 @@ SEARCH_TERMS = [
     "Sommelier",
     "Open kitchen",
     "Romantic terrace",
+    "Dachterrasse",
+    "Great view Restaurant",
+    "Pa Amb Oli",
 ]
 
 LOCATIONS = [

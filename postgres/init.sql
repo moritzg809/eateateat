@@ -16,22 +16,32 @@ CREATE TABLE serper_cache (
 
 -- Restaurants (populated / upserted from serper_cache)
 CREATE TABLE restaurants (
-    id            SERIAL PRIMARY KEY,
-    place_id      TEXT UNIQUE NOT NULL,   -- Google placeId or cid
-    name          TEXT NOT NULL,
-    address       TEXT,
-    rating        NUMERIC(3, 1),
-    rating_count  INTEGER,
-    categories    TEXT[],
-    phone         TEXT,
-    website       TEXT,
-    latitude      NUMERIC(10, 7),
-    longitude     NUMERIC(10, 7),
-    thumbnail_url TEXT,
-    price_level   TEXT,                   -- '$' | '$$' | '$$$' | '$$$$'
-    raw_data      JSONB,
-    created_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    id              SERIAL PRIMARY KEY,
+    place_id        TEXT UNIQUE NOT NULL,   -- Google placeId or cid
+    name            TEXT NOT NULL,
+    address         TEXT,
+    rating          NUMERIC(3, 1),
+    rating_count    INTEGER,
+    categories      TEXT[],
+    phone           TEXT,
+    website         TEXT,
+    latitude        NUMERIC(10, 7),
+    longitude       NUMERIC(10, 7),
+    thumbnail_url   TEXT,
+    price_level     TEXT,                   -- '$' | '$$' | '$$$' | '$$$$'
+    raw_data        JSONB,
+    -- Pipeline status tracking
+    pipeline_status TEXT NOT NULL DEFAULT 'new',
+    --   'new'          → freshly scraped, not yet enriched
+    --   'disqualified' → below quality threshold (rating/reviews)
+    --   'enriched'     → has Gemini scores and text
+    --   'complete'     → fully enriched + completeness check passed → shown in app
+    --   'inactive'     → closed or no longer meets criteria
+    scraped_at       TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_verified_at TIMESTAMP WITH TIME ZONE,
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at       TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Which search result positions each restaurant appeared in
@@ -48,9 +58,11 @@ CREATE TABLE search_results (
 -- Indexes
 -- =============================================================
 
-CREATE INDEX idx_restaurants_rating       ON restaurants (rating);
-CREATE INDEX idx_restaurants_rating_count ON restaurants (rating_count);
-CREATE INDEX idx_restaurants_place_id     ON restaurants (place_id);
+CREATE INDEX idx_restaurants_rating          ON restaurants (rating);
+CREATE INDEX idx_restaurants_rating_count    ON restaurants (rating_count);
+CREATE INDEX idx_restaurants_place_id        ON restaurants (place_id);
+CREATE INDEX idx_restaurants_pipeline_status ON restaurants (pipeline_status);
+CREATE INDEX idx_restaurants_is_active       ON restaurants (is_active);
 
 -- =============================================================
 -- Trigger: keep updated_at current on restaurants
@@ -71,6 +83,20 @@ CREATE TRIGGER trg_restaurants_updated_at
 CREATE TRIGGER trg_cache_updated_at
     BEFORE UPDATE ON serper_cache
     FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- =============================================================
+-- Pipeline runs: tracks when each (query × location) was last scraped
+-- =============================================================
+
+CREATE TABLE pipeline_runs (
+    id            SERIAL PRIMARY KEY,
+    query         TEXT NOT NULL,
+    location      TEXT NOT NULL,
+    last_run_at   TIMESTAMP WITH TIME ZONE,
+    result_count  INTEGER NOT NULL DEFAULT 0,
+    status        TEXT    NOT NULL DEFAULT 'pending',   -- 'pending'|'ok'|'error'
+    UNIQUE (query, location)
+);
 
 -- =============================================================
 -- Gemini enrichment cache (keyed by Google place_id)
@@ -101,14 +127,52 @@ CREATE TABLE gemini_enrichments (
 
     -- Metadaten
     gemini_model    TEXT,
-    enriched_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    enriched_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    raw_response    JSONB    -- full Gemini API response for re-parsing
 );
 
 CREATE INDEX idx_enrichments_place_id ON gemini_enrichments (place_id);
 
 -- =============================================================
--- View: top restaurants (Step 2 filter)
---   Tweak MIN_RATING / MIN_REVIEWS here or override in app
+-- SerpAPI Place Details cache (keyed by Google place_id)
+-- Fetches structured "About" section data from Google Maps:
+-- highlights, popular_for, offerings, atmosphere, crowd, etc.
+-- =============================================================
+
+CREATE TABLE serpapi_details (
+    id              SERIAL PRIMARY KEY,
+    place_id        TEXT UNIQUE NOT NULL,   -- Google Place ID = cache key
+
+    -- Structured "About" fields (TEXT arrays from Google Maps)
+    highlights      TEXT[],   -- e.g. {"Live music","Rooftop seating"}
+    popular_for     TEXT[],   -- e.g. {"Dinner","Solo dining"}
+    offerings       TEXT[],   -- e.g. {"Cocktails","Vegetarian options"}
+    atmosphere      TEXT[],   -- e.g. {"Cozy","Romantic","Trendy"}
+    crowd           TEXT[],   -- e.g. {"Groups","Locals","Tourists"}
+    planning        TEXT[],   -- e.g. {"Reservations recommended"}
+    payments        TEXT[],   -- e.g. {"Credit cards","NFC mobile payments"}
+    accessibility   TEXT[],   -- e.g. {"Wheelchair accessible entrance"}
+    children        TEXT[],   -- e.g. {"Good for kids","High chairs"}
+    parking         TEXT[],   -- e.g. {"Free parking lot","Street parking"}
+
+    -- Service options (structured booleans from Google)
+    service_options JSONB,    -- {dine_in: true, takeout: false, delivery: true, ...}
+
+    -- Full raw extensions for future use
+    raw_extensions  JSONB,
+
+    -- Full SerpAPI place_results response for re-parsing
+    raw_response    JSONB,
+
+    fetched_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_serpapi_details_place_id ON serpapi_details (place_id);
+
+-- =============================================================
+-- View: display-ready restaurants
+--   Only shows restaurants that have passed the full pipeline:
+--   scraped → enriched → completeness check → complete
 -- =============================================================
 
 CREATE VIEW top_restaurants AS
@@ -127,6 +191,6 @@ SELECT
     price_level,
     thumbnail_url
 FROM restaurants
-WHERE rating       >= 4.5
-  AND rating_count >= 100
+WHERE pipeline_status = 'complete'
+  AND is_active = TRUE
 ORDER BY rating DESC, rating_count DESC;

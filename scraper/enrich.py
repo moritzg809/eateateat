@@ -20,9 +20,10 @@ import os
 import re
 import time
 
+import psycopg2.extras
 import requests
 
-from db import get_connection
+from db import count_today_enrichments, get_connection, set_pipeline_status
 
 logging.basicConfig(
     level=logging.INFO,
@@ -115,7 +116,7 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
-def call_gemini(name: str, address: str, lat=None, lng=None, retries: int = 3) -> dict:
+def call_gemini(name: str, address: str, lat=None, lng=None, retries: int = 3) -> tuple[dict, dict]:
     prompt = PROMPT_TEMPLATE.format(name=name, address=address or "Mallorca, Spanien")
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -133,9 +134,10 @@ def call_gemini(name: str, address: str, lat=None, lng=None, retries: int = 3) -
         try:
             resp = _SESSION.post(GEMINI_URL, json=payload, timeout=60)
             resp.raise_for_status()
-            data = resp.json()
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
-            return _extract_json(text)
+            raw = resp.json()
+            text = raw["candidates"][0]["content"]["parts"][0]["text"]
+            parsed = _extract_json(text)
+            return parsed, raw  # (parsed_dict, full_api_response)
         except requests.HTTPError:
             if resp.status_code == 429 or attempt < retries:
                 wait = 2 ** attempt
@@ -182,7 +184,7 @@ def fetch_pending(
         return cur.fetchall()
 
 
-def save_enrichment(conn, place_id: str, data: dict):
+def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None = None):
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -191,13 +193,13 @@ def save_enrichment(conn, place_id: str, data: dict):
                 family_score, date_score,   friends_score, solo_score,
                 relaxed_score, party_score, special_score, foodie_score,
                 lingering_score, unique_score, dresscode_score,
-                summary_de, must_order, vibe, gemini_model
+                summary_de, must_order, vibe, gemini_model, raw_response
             ) VALUES (
                 %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s,
-                %s, %s, %s, %s
+                %s, %s, %s, %s, %s
             )
             ON CONFLICT (place_id) DO UPDATE SET
                 family_score    = EXCLUDED.family_score,
@@ -215,6 +217,7 @@ def save_enrichment(conn, place_id: str, data: dict):
                 must_order      = EXCLUDED.must_order,
                 vibe            = EXCLUDED.vibe,
                 gemini_model    = EXCLUDED.gemini_model,
+                raw_response    = EXCLUDED.raw_response,
                 enriched_at     = NOW()
             """,
             (
@@ -224,6 +227,7 @@ def save_enrichment(conn, place_id: str, data: dict):
                 data.get("lingering"), data.get("unique"),  data.get("dresscode"),
                 data.get("summary_de"), data.get("must_order"), data.get("vibe"),
                 MODEL,
+                psycopg2.extras.Json(raw_response) if raw_response else None,
             ),
         )
     conn.commit()
@@ -233,21 +237,39 @@ def save_enrichment(conn, place_id: str, data: dict):
 # Main
 # ---------------------------------------------------------------------------
 
-def run(limit=None, min_rating=4.5, min_reviews=100, dry_run=False, force=False):
+def run(limit=None, min_rating=4.5, min_reviews=100, dry_run=False, force=False,
+        daily_limit=500):
     conn = get_connection()
-    rows = fetch_pending(conn, min_rating, min_reviews, limit, force)
+
+    # --- Daily cap check ---
+    today_count = count_today_enrichments(conn)
+    remaining = daily_limit - today_count
+    if remaining <= 0:
+        logger.info("=" * 60)
+        logger.info("Daily enrichment limit reached (%d/%d) — skipping.", today_count, daily_limit)
+        logger.info("=" * 60)
+        conn.close()
+        return
+
+    # Apply daily cap to limit
+    effective_limit = limit
+    if limit is None or limit > remaining:
+        effective_limit = remaining
+
+    rows = fetch_pending(conn, min_rating, min_reviews, effective_limit, force)
     total = len(rows)
 
     logger.info("=" * 60)
     logger.info("mallorcaeat enricher — Gemini Maps Grounding")
-    logger.info("  model       : %s", MODEL)
-    logger.info("  pending     : %d", total)
-    logger.info("  min rating  : %.1f   min reviews: %d", min_rating, min_reviews)
-    logger.info("  cache key   : place_id (pay once per restaurant)")
+    logger.info("  model        : %s", MODEL)
+    logger.info("  pending      : %d", total)
+    logger.info("  today so far : %d / %d daily limit", today_count, daily_limit)
+    logger.info("  min rating   : %.1f   min reviews: %d", min_rating, min_reviews)
+    logger.info("  cache key    : place_id (pay once per restaurant)")
     if dry_run:
-        logger.info("  MODE        : DRY RUN (no API calls, no costs)")
+        logger.info("  MODE         : DRY RUN (no API calls, no costs)")
     if force:
-        logger.info("  MODE        : FORCE (re-enriching cached entries)")
+        logger.info("  MODE         : FORCE (re-enriching cached entries)")
     logger.info("=" * 60)
 
     stats = {"ok": 0, "errors": 0}
@@ -261,8 +283,9 @@ def run(limit=None, min_rating=4.5, min_reviews=100, dry_run=False, force=False)
 
         logger.info("%s %s", prefix, name)
         try:
-            data = call_gemini(name, address, lat, lng)
-            save_enrichment(conn, place_id, data)
+            data, raw_response = call_gemini(name, address, lat, lng)
+            save_enrichment(conn, place_id, data, raw_response)
+            set_pipeline_status(conn, place_id, "enriched")
             stats["ok"] += 1
             logger.info("         -> ✓  %s", data.get("vibe", "")[:90])
             time.sleep(0.3)  # gentle pacing
@@ -283,6 +306,7 @@ if __name__ == "__main__":
     ap.add_argument("--min-reviews", type=int,   default=100,   help="minimum review count")
     ap.add_argument("--dry-run",     action="store_true",       help="no API calls, just show what would run")
     ap.add_argument("--force",       action="store_true",       help="re-enrich even if place_id already cached")
+    ap.add_argument("--daily-limit", type=int,   default=500,   help="max enrichments per calendar day (default 500)")
     args = ap.parse_args()
 
     run(
@@ -291,4 +315,5 @@ if __name__ == "__main__":
         min_reviews=args.min_reviews,
         dry_run=args.dry_run,
         force=args.force,
+        daily_limit=args.daily_limit,
     )
