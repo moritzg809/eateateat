@@ -62,6 +62,21 @@ services:
     profiles:
       - detail
 
+  # ── Embedder: Step 4 — Gemini text embeddings for similarity search ───────
+  embedder:
+    build: ./scraper
+    command: python embed.py
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./scraper:/app
+    profiles:
+      - embed
+
   # ── Pipeline: unified orchestrator (all stages) ────────────────────────────
   pipeline:
     build: ./scraper

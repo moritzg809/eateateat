@@ -1,6 +1,9 @@
 import os
 import re
+import time as _time
 import uuid
+
+import numpy as np
 import psycopg2
 import psycopg2.extras
 from flask import Flask, render_template, request, jsonify, make_response
@@ -160,155 +163,204 @@ def api_remove_favorite(place_id):
     return jsonify({"ok": True})
 
 
+# ── Recommender — candidate cache (module-level, refreshed every 5 min) ──────
+
+_CAND_CACHE: tuple[float, list[dict]] | None = None
+_CAND_CACHE_TTL = 300  # seconds
+
+_SCORE_COLS = [
+    "family_score", "date_score",   "friends_score", "solo_score",
+    "relaxed_score","party_score",  "special_score", "foodie_score",
+    "lingering_score","unique_score","dresscode_score",
+]
+
+
+def _load_candidates(conn) -> list[dict]:
+    """Load all top restaurants with scores, embeddings and open_slots.
+
+    Results are cached module-wide for _CAND_CACHE_TTL seconds so repeated
+    calls to /api/similar don't hammer the DB with 6 MB queries.
+    Each row is pre-processed:
+      row['scores_norm']  – normalised numpy score vector (or None)
+      row['emb_norm']     – normalised embedding vector   (or None)
+    """
+    global _CAND_CACHE
+    now = _time.time()
+    if _CAND_CACHE and now - _CAND_CACHE[0] < _CAND_CACHE_TTL:
+        return _CAND_CACHE[1]
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("""
+            SELECT
+                r.place_id,
+                r.name,
+                r.rating,
+                r.price_level,
+                r.thumbnail_url,
+                res.raw_data->>'type'  AS place_type,
+                res.open_slots,
+                COALESCE(e.family_score,    0) AS family_score,
+                COALESCE(e.date_score,      0) AS date_score,
+                COALESCE(e.friends_score,   0) AS friends_score,
+                COALESCE(e.solo_score,      0) AS solo_score,
+                COALESCE(e.relaxed_score,   0) AS relaxed_score,
+                COALESCE(e.party_score,     0) AS party_score,
+                COALESCE(e.special_score,   0) AS special_score,
+                COALESCE(e.foodie_score,    0) AS foodie_score,
+                COALESCE(e.lingering_score, 0) AS lingering_score,
+                COALESCE(e.unique_score,    0) AS unique_score,
+                COALESCE(e.dresscode_score, 0) AS dresscode_score,
+                e.vibe,
+                emb.embedding
+            FROM  top_restaurants           r
+            JOIN  restaurants             res ON res.place_id = r.place_id
+            LEFT JOIN gemini_enrichments    e ON e.place_id   = r.place_id
+            LEFT JOIN restaurant_embeddings emb ON emb.place_id = r.place_id
+        """)
+        raw_rows = [dict(r) for r in cur.fetchall()]
+
+    processed = []
+    for row in raw_rows:
+        # Pre-normalise score vector
+        scores = np.array([row[c] for c in _SCORE_COLS], dtype=np.float32)
+        snorm  = np.linalg.norm(scores)
+        row["scores_norm"] = scores / snorm if snorm > 0 else None
+
+        # Pre-normalise embedding vector (REAL[] → numpy)
+        vec = row.get("embedding")
+        if vec is not None:
+            v = np.array(vec, dtype=np.float32)
+            n = np.linalg.norm(v)
+            row["emb_norm"] = v / n if n > 0 else None
+        else:
+            row["emb_norm"] = None
+
+        # open_slots as a frozenset for fast Jaccard
+        row["slots_set"] = frozenset(row.get("open_slots") or [])
+
+        processed.append(row)
+
+    _CAND_CACHE = (_time.time(), processed)
+    return processed
+
+
+def _photo_url(pid: str, thumbnail_url: str | None) -> str | None:
+    """Return filesystem URL if photo exists, else fall back to Serper thumbnail."""
+    photo_dir = os.path.join(PHOTOS_DIR, pid)
+    if os.path.isdir(photo_dir) and os.path.exists(os.path.join(photo_dir, "0.jpg")):
+        return f"/static/photos/{pid}/0.jpg"
+    return thumbnail_url or None
+
+
+def _jaccard(a: frozenset, b: frozenset) -> float:
+    u = a | b
+    return len(a & b) / len(u) if u else 0.0
+
+
+def _price_bonus(pl_a: str | None, pl_b: str | None) -> float:
+    diff = abs(len(pl_a or "€") - len(pl_b or "€"))
+    return 0.05 if diff == 0 else 0.025 if diff == 1 else 0.0
+
+
 # ── Recommender API ──────────────────────────────────────────────────────────
 
 @app.route("/api/similar/<place_id>")
 def api_similar(place_id):
     """Return up to n restaurants similar to <place_id>.
 
-    Composite similarity (0–1):
-      0.60 × cosine similarity of the 11 Gemini profile scores
-      0.25 × Jaccard similarity of SerpAPI tag arrays
-      0.10 × type bonus (same place type)
-      0.05 × price bonus (same level = full, ±1 level = half)
+    Composite similarity — two modes:
+
+    With embeddings (when target + candidate both have Gemini embeddings):
+      0.55 × embedding cosine    (text: description, types, tags, summary, vibe, …)
+      0.20 × profile-score cosine (11 Gemini dimension scores)
+      0.15 × open-hours Jaccard  (2-h time-slot overlap)
+      0.05 × type bonus
+      0.05 × price bonus
+
+    Fallback (SQL, when embeddings unavailable):
+      0.50 × profile-score cosine
+      0.20 × SerpAPI tag Jaccard
+      0.15 × open-hours Jaccard
+      0.10 × type bonus
+      0.05 × price bonus
 
     Only results with similarity ≥ 0.50 are returned.
     """
-    n = min(int(request.args.get("n", 6)), 20)
+    n    = min(int(request.args.get("n", 6)), 20)
     conn = get_db()
     try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("""
-                WITH target AS (
-                    SELECT
-                        COALESCE(e.family_score,    0) AS family_score,
-                        COALESCE(e.date_score,      0) AS date_score,
-                        COALESCE(e.friends_score,   0) AS friends_score,
-                        COALESCE(e.solo_score,      0) AS solo_score,
-                        COALESCE(e.relaxed_score,   0) AS relaxed_score,
-                        COALESCE(e.party_score,     0) AS party_score,
-                        COALESCE(e.special_score,   0) AS special_score,
-                        COALESCE(e.foodie_score,    0) AS foodie_score,
-                        COALESCE(e.lingering_score, 0) AS lingering_score,
-                        COALESCE(e.unique_score,    0) AS unique_score,
-                        COALESCE(e.dresscode_score, 0) AS dresscode_score,
-                        COALESCE(sd.atmosphere, '{}') || COALESCE(sd.offerings, '{}') ||
-                        COALESCE(sd.crowd,      '{}') || COALESCE(sd.highlights,'{}') AS tags,
-                        rs.raw_data->>'type' AS place_type,
-                        tr.price_level
-                    FROM  top_restaurants tr
-                    LEFT JOIN gemini_enrichments e  ON e.place_id  = tr.place_id
-                    LEFT JOIN serpapi_details    sd ON sd.place_id = tr.place_id
-                    LEFT JOIN restaurants       rs ON rs.place_id  = tr.place_id
-                    WHERE tr.place_id = %(place_id)s
-                )
-                SELECT *
-                FROM (
-                    SELECT
-                        r.place_id,
-                        r.name,
-                        r.rating,
-                        r.price_level,
-                        r.thumbnail_url,
-                        e.vibe,
-                        res2.raw_data->>'type' AS place_type,
-                        -- 60pct: cosine similarity of 11 profile-score vectors
-                        (
-                            COALESCE(e.family_score,0)   * t.family_score
-                          + COALESCE(e.date_score,0)     * t.date_score
-                          + COALESCE(e.friends_score,0)  * t.friends_score
-                          + COALESCE(e.solo_score,0)     * t.solo_score
-                          + COALESCE(e.relaxed_score,0)  * t.relaxed_score
-                          + COALESCE(e.party_score,0)    * t.party_score
-                          + COALESCE(e.special_score,0)  * t.special_score
-                          + COALESCE(e.foodie_score,0)   * t.foodie_score
-                          + COALESCE(e.lingering_score,0)* t.lingering_score
-                          + COALESCE(e.unique_score,0)   * t.unique_score
-                          + COALESCE(e.dresscode_score,0)* t.dresscode_score
-                        )::float / NULLIF(
-                            SQRT(
-                                COALESCE(e.family_score,0)^2    + COALESCE(e.date_score,0)^2
-                              + COALESCE(e.friends_score,0)^2   + COALESCE(e.solo_score,0)^2
-                              + COALESCE(e.relaxed_score,0)^2   + COALESCE(e.party_score,0)^2
-                              + COALESCE(e.special_score,0)^2   + COALESCE(e.foodie_score,0)^2
-                              + COALESCE(e.lingering_score,0)^2 + COALESCE(e.unique_score,0)^2
-                              + COALESCE(e.dresscode_score,0)^2
-                            ) * SQRT(
-                                t.family_score^2    + t.date_score^2
-                              + t.friends_score^2   + t.solo_score^2
-                              + t.relaxed_score^2   + t.party_score^2
-                              + t.special_score^2   + t.foodie_score^2
-                              + t.lingering_score^2 + t.unique_score^2
-                              + t.dresscode_score^2
-                            )
-                        , 0) * 0.60
-                        -- 25pct: Jaccard similarity of SerpAPI tag arrays
-                        + COALESCE(
-                            CARDINALITY(ARRAY(
-                                SELECT unnest(
-                                    COALESCE(sd.atmosphere,'{}') || COALESCE(sd.offerings,'{}') ||
-                                    COALESCE(sd.crowd,     '{}') || COALESCE(sd.highlights,'{}')
-                                )
-                                INTERSECT
-                                SELECT unnest(t.tags)
-                            ))::float /
-                            NULLIF(CARDINALITY(ARRAY(
-                                SELECT unnest(
-                                    COALESCE(sd.atmosphere,'{}') || COALESCE(sd.offerings,'{}') ||
-                                    COALESCE(sd.crowd,     '{}') || COALESCE(sd.highlights,'{}')
-                                )
-                                UNION
-                                SELECT unnest(t.tags)
-                            )), 0)
-                        , 0) * 0.25
-                        -- 10pct: type bonus
-                        + CASE WHEN res2.raw_data->>'type' = t.place_type THEN 0.10 ELSE 0 END
-                        -- 5pct: price level bonus
-                        + CASE
-                            WHEN r.price_level = t.price_level THEN 0.05
-                            WHEN ABS(
-                                LENGTH(COALESCE(r.price_level, '€')) -
-                                LENGTH(COALESCE(t.price_level, '€'))
-                            ) = 1 THEN 0.025
-                            ELSE 0
-                          END
-                        AS similarity
-                    FROM  top_restaurants      r
-                    JOIN  gemini_enrichments   e   ON e.place_id   = r.place_id
-                    LEFT JOIN serpapi_details  sd  ON sd.place_id  = r.place_id
-                    LEFT JOIN restaurants      res2 ON res2.place_id = r.place_id
-                    CROSS JOIN target t
-                    WHERE r.place_id != %(place_id)s
-                ) sub
-                WHERE  similarity >= 0.50
-                ORDER  BY similarity DESC
-                LIMIT  %(n)s
-            """, {"place_id": place_id, "n": n})
-            rows = cur.fetchall()
+        candidates = _load_candidates(conn)
     finally:
         conn.close()
 
+    # ── Find target ───────────────────────────────────────────────────────────
+    target = next((c for c in candidates if c["place_id"] == place_id), None)
+    if not target or target["scores_norm"] is None:
+        return jsonify([])  # no scores → can't rank
+
+    t_scores  = target["scores_norm"]
+    t_emb     = target["emb_norm"]
+    t_slots   = target["slots_set"]
+    t_type    = target["place_type"]
+    t_price   = target["price_level"]
+    use_emb   = t_emb is not None
+
+    # ── Score each candidate ──────────────────────────────────────────────────
+    ranked: list[tuple[float, dict]] = []
+
+    for cand in candidates:
+        if cand["place_id"] == place_id:
+            continue
+        if cand["scores_norm"] is None:
+            continue
+
+        # Profile-score cosine (always available)
+        score_cos = float(np.dot(t_scores, cand["scores_norm"]))
+
+        # Embedding cosine (only when both have embeddings)
+        emb_cos = 0.0
+        c_emb   = cand["emb_norm"]
+        if use_emb and c_emb is not None:
+            emb_cos = float(np.dot(t_emb, c_emb))
+
+        # Open-hours Jaccard
+        slots_j = _jaccard(t_slots, cand["slots_set"])
+
+        # Type & price bonuses
+        type_b  = 0.05 if cand["place_type"] == t_type else 0.0
+        price_b = _price_bonus(t_price, cand["price_level"])
+
+        if use_emb and c_emb is not None:
+            # Full embedding mode
+            sim = (0.55 * emb_cos
+                 + 0.20 * score_cos
+                 + 0.15 * slots_j
+                 + type_b + price_b)
+        else:
+            # Scores-only mode (no embedding for target or candidate)
+            sim = (0.60 * score_cos
+                 + 0.15 * slots_j
+                 + type_b + price_b * 2)   # bump price weight slightly
+
+        if sim >= 0.50:
+            ranked.append((sim, cand))
+
+    ranked.sort(key=lambda x: x[0], reverse=True)
+
+    # ── Build response ────────────────────────────────────────────────────────
     results = []
-    for row in rows:
-        r = dict(row)
-        pid = r["place_id"]
-        # Filesystem photo first, fallback to Serper thumbnail
-        photo_url = None
-        photo_dir = os.path.join(PHOTOS_DIR, pid)
-        if os.path.isdir(photo_dir) and os.path.exists(os.path.join(photo_dir, "0.jpg")):
-            photo_url = f"/static/photos/{pid}/0.jpg"
-        if not photo_url and r.get("thumbnail_url"):
-            photo_url = r["thumbnail_url"]
-        type_emoji, _ = _classify_type(r.get("place_type"))
+    for sim, cand in ranked[:n]:
+        pid        = cand["place_id"]
+        type_emoji, _ = _classify_type(cand.get("place_type"))
         results.append({
             "place_id":    pid,
-            "name":        r["name"],
-            "rating":      float(r["rating"]) if r["rating"] else None,
-            "price_level": r.get("price_level"),
+            "name":        cand["name"],
+            "rating":      float(cand["rating"]) if cand["rating"] else None,
+            "price_level": cand.get("price_level"),
             "type_emoji":  type_emoji,
-            "vibe":        r.get("vibe"),
-            "photo_url":   photo_url,
-            "similarity":  round(float(r["similarity"]), 3),
+            "vibe":        cand.get("vibe"),
+            "photo_url":   _photo_url(pid, cand.get("thumbnail_url")),
+            "similarity":  round(sim, 3),
         })
     return jsonify(results)
 
