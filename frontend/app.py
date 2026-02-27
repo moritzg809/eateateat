@@ -1,10 +1,12 @@
 import os
 import re
+import uuid
 import psycopg2
 import psycopg2.extras
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify, make_response
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "mallorcaeat-dev-key")
 
 PHOTOS_DIR  = "/app/static/photos"   # Docker volume mount (same as scraper's /photos)
 MAX_PHOTOS  = 8
@@ -26,9 +28,7 @@ PROFILES = [
 
 
 def _extract_city(address: str | None) -> str | None:
-    """Extract city name from a Mallorca address string.
-    E.g. '... 07004 Palma, Illes Balears, Spanien' → 'Palma'
-    """
+    """Extract city name from a Mallorca address string."""
     if not address:
         return None
     m = re.search(r'0\d{4}\s+([^,]+)', address)
@@ -88,13 +88,96 @@ def get_db():
     return psycopg2.connect(os.environ["DATABASE_URL"])
 
 
+# ── DB initialisation (run once per process) ────────────────────────────────
+_db_ready = False
+
+def _init_db():
+    global _db_ready
+    if _db_ready:
+        return
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_favorites (
+                id          SERIAL PRIMARY KEY,
+                session_id  TEXT    NOT NULL,
+                place_id    TEXT    NOT NULL,
+                list_type   TEXT    NOT NULL CHECK (list_type IN ('want', 'been')),
+                score       INTEGER CHECK (score BETWEEN 0 AND 100),
+                created_at  TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE (session_id, place_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_favorites_session
+                ON user_favorites(session_id);
+        """)
+        conn.commit()
+    conn.close()
+    _db_ready = True
+
+
+# ── Favorites API ────────────────────────────────────────────────────────────
+
+@app.route("/api/favorite", methods=["POST"])
+def api_add_favorite():
+    sid = request.cookies.get("sid")
+    if not sid:
+        return jsonify({"error": "no session"}), 400
+    data      = request.get_json(silent=True) or {}
+    place_id  = data.get("place_id", "").strip()
+    list_type = data.get("list_type", "")
+    score     = data.get("score")  # int or None
+    if not place_id or list_type not in ("want", "been"):
+        return jsonify({"error": "invalid data"}), 400
+    if score is not None:
+        score = max(0, min(100, int(score)))
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO user_favorites (session_id, place_id, list_type, score)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (session_id, place_id)
+            DO UPDATE SET list_type = EXCLUDED.list_type,
+                          score     = EXCLUDED.score
+        """, (sid, place_id, list_type, score))
+        conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/favorite/<place_id>", methods=["DELETE"])
+def api_remove_favorite(place_id):
+    sid = request.cookies.get("sid")
+    if not sid:
+        return jsonify({"error": "no session"}), 400
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM user_favorites WHERE session_id = %s AND place_id = %s",
+            (sid, place_id)
+        )
+        conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+# ── Main view ────────────────────────────────────────────────────────────────
+
 @app.route("/")
 def index():
+    _init_db()
+
+    # Session cookie (anonymous, persistent)
+    sid     = request.cookies.get("sid") or ""
+    new_sid = not sid
+    if new_sid:
+        sid = str(uuid.uuid4())
+
     search      = request.args.get("search", "").strip()
     location    = request.args.get("location", "").strip()
     profile_key = request.args.get("profile", "").strip()
     min_score   = int(request.args.get("min_score", 7))
     page        = max(1, int(request.args.get("page", 1) or 1))
+    view        = request.args.get("view", "").strip()  # "" | "want" | "been"
 
     ctx = {
         "total": 0, "top_count": 0, "avg_rating": "–", "enriched_count": 0,
@@ -103,6 +186,7 @@ def index():
         "profile_key": profile_key, "min_score": min_score,
         "profiles": PROFILES,
         "page": page, "total_pages": 1, "total_filtered": 0, "per_page": PER_PAGE,
+        "view": view,
         "error": None,
     }
 
@@ -126,9 +210,9 @@ def index():
             ctx["locations"] = [r["location"] for r in cur.fetchall()]
 
             # Build main query
-            score_col = f"{profile_key}_score" if profile_key else None
+            score_col  = f"{profile_key}_score" if profile_key else None
             conditions = ["1=1"]
-            params: dict = {}
+            params: dict = {"sid": sid}
 
             if search:
                 conditions.append("t.name ILIKE %(search)s")
@@ -139,6 +223,9 @@ def index():
             if score_col:
                 conditions.append(f"e.{score_col} >= %(min_score)s")
                 params["min_score"] = min_score
+            if view in ("want", "been"):
+                conditions.append("f.list_type = %(view)s")
+                params["view"] = view
 
             where = " AND ".join(conditions)
             order = f"e.{score_col} DESC, t.rating DESC" if score_col else "t.rating DESC, t.rating_count DESC"
@@ -147,7 +234,9 @@ def index():
             cur.execute(f"""
                 SELECT COUNT(*) AS n
                 FROM top_restaurants t
-                LEFT JOIN gemini_enrichments e ON e.place_id = t.place_id
+                LEFT JOIN gemini_enrichments e  ON e.place_id = t.place_id
+                LEFT JOIN user_favorites      f ON f.place_id = t.place_id
+                                               AND f.session_id = %(sid)s
                 WHERE {where}
             """, params)
             total_filtered = cur.fetchone()["n"]
@@ -168,11 +257,15 @@ def index():
                     sd.highlights, sd.popular_for, sd.offerings, sd.atmosphere,
                     sd.crowd, sd.planning, sd.amenities, sd.dining_options,
                     sd.service_options,
-                    res.raw_data->>'type' AS place_type
+                    res.raw_data->>'type' AS place_type,
+                    f.list_type             AS fav_type,
+                    f.score                 AS fav_score
                 FROM top_restaurants t
                 LEFT JOIN gemini_enrichments e  ON e.place_id  = t.place_id
                 LEFT JOIN serpapi_details    sd ON sd.place_id = t.place_id
                 LEFT JOIN restaurants       res ON res.place_id = t.place_id
+                LEFT JOIN user_favorites      f ON f.place_id  = t.place_id
+                                               AND f.session_id = %(sid)s
                 WHERE {where}
                 ORDER BY {order}
                 LIMIT %(per_page)s OFFSET %(offset)s
@@ -186,14 +279,14 @@ def index():
                 r["type_emoji"], r["type_label"] = _classify_type(r.get("place_type"))
 
                 # Load cached photos from Docker volume (downloaded during scraping)
-                place_id   = r["place_id"]
-                photo_dir  = os.path.join(PHOTOS_DIR, place_id)
+                place_id_r = r["place_id"]
+                photo_dir  = os.path.join(PHOTOS_DIR, place_id_r)
                 photos: list[str] = []
                 if os.path.isdir(photo_dir):
                     for i in range(MAX_PHOTOS):
                         path = os.path.join(photo_dir, f"{i}.jpg")
                         if os.path.exists(path):
-                            photos.append(f"/static/photos/{place_id}/{i}.jpg")
+                            photos.append(f"/static/photos/{place_id_r}/{i}.jpg")
                         else:
                             break  # files are numbered consecutively
 
@@ -209,7 +302,10 @@ def index():
     except Exception as exc:
         ctx["error"] = str(exc)
 
-    return render_template("index.html", **ctx)
+    resp = make_response(render_template("index.html", **ctx))
+    if new_sid:
+        resp.set_cookie("sid", sid, max_age=365 * 24 * 3600, samesite="Lax", httponly=True)
+    return resp
 
 
 if __name__ == "__main__":

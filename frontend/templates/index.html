@@ -98,7 +98,7 @@
   <div class="max-w-7xl mx-auto px-5">
     <div class="filter-scroll flex gap-2 overflow-x-auto py-3">
       <a href="{{ url_for('index', search=search, location=location) }}"
-         class="pill shrink-0 border border-cream/20 rounded-full px-4 py-1.5 font-mono text-xs text-cream/50 hover:border-cream/50 {{ 'active' if not profile_key else '' }}">
+         class="pill shrink-0 border border-cream/20 rounded-full px-4 py-1.5 font-mono text-xs text-cream/50 hover:border-cream/50 {{ 'active' if not profile_key and not view else '' }}">
         Alle
       </a>
       {% for key, emoji, label in profiles %}
@@ -107,6 +107,18 @@
         {{ emoji }}&nbsp;{{ label }}
       </a>
       {% endfor %}
+      <!-- Favoriten-Filter -->
+      <span class="shrink-0 w-px bg-cream/10 mx-1"></span>
+      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, view='want') }}"
+         class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
+                {{ 'border-terra bg-terra/20 text-terra' if view == 'want' else 'border-cream/20 text-cream/50 hover:border-terra/50 hover:text-terra/70' }}">
+        🤍&nbsp;Merkliste
+      </a>
+      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, view='been') }}"
+         class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
+                {{ 'border-sage bg-sage/20 text-sage' if view == 'been' else 'border-cream/20 text-cream/50 hover:border-sage/50 hover:text-sage/70' }}">
+        ✓&nbsp;War da
+      </a>
     </div>
   </div>
 </div>
@@ -195,13 +207,41 @@
       ("dresscode", "👔",    "Dress Code", r.dresscode_score),
     ] %}
 
-    <div class="card group bg-white rounded-2xl overflow-hidden flex flex-col border border-sand {{ 'card-featured' if loop.first else '' }}">
+    <div class="card group bg-white rounded-2xl overflow-hidden flex flex-col border border-sand {{ 'card-featured' if loop.first else '' }}"
+         data-place-id="{{ r.place_id }}"
+         data-fav-type="{{ r.fav_type or '' }}">
 
       <!-- Image carousel -->
       <div class="card-img relative h-52 overflow-hidden bg-gradient-to-br from-sand to-stone-100 group" id="c{{ loop.index }}" data-idx="0">
         <!-- Emoji fallback — always rendered behind photos, visible when images fail or are absent -->
         <div class="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0">
           <span class="text-7xl opacity-20">{{ r.type_emoji }}</span>
+        </div>
+
+        <!-- Favoriten-Buttons (top-left) -->
+        <div class="absolute top-2 left-2 flex gap-1.5 z-20">
+          <button data-fav-btn="want"
+                  onclick="toggleFav(event,'{{ r.place_id }}','want')"
+                  title="Da möchte ich hin"
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-base backdrop-blur-sm transition-all
+                         {{ 'bg-terra text-cream shadow-md' if r.fav_type == 'want' else 'bg-ink/40 text-cream/70 hover:bg-terra/80 hover:text-cream' }}">
+            {{ '🤍' if r.fav_type != 'want' else '❤️' }}
+          </button>
+          <button data-fav-btn="been"
+                  onclick="toggleFav(event,'{{ r.place_id }}','been')"
+                  title="Da war ich"
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-base backdrop-blur-sm transition-all
+                         {{ 'bg-sage text-cream shadow-md' if r.fav_type == 'been' else 'bg-ink/40 text-cream/70 hover:bg-sage/80 hover:text-cream' }}">
+            {{ '✓' if r.fav_type == 'been' else '○' }}
+          </button>
+          {% if r.fav_type == 'been' and r.fav_score is not none %}
+          <span data-fav-score
+                class="bg-sage text-cream font-mono text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center shadow-md">
+            {{ r.fav_score }}
+          </span>
+          {% else %}
+          <span data-fav-score class="hidden bg-sage text-cream font-mono text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center shadow-md"></span>
+          {% endif %}
         </div>
 
         {% if r.photos %}
@@ -391,6 +431,7 @@
   {% if search %}{% set base_args = base_args + ['search=' ~ search] %}{% endif %}
   {% if location %}{% set base_args = base_args + ['location=' ~ location] %}{% endif %}
   {% if profile_key %}{% set base_args = base_args + ['profile=' ~ profile_key, 'min_score=' ~ min_score] %}{% endif %}
+  {% if view %}{% set base_args = base_args + ['view=' ~ view] %}{% endif %}
   {% set base_qs = base_args | join('&') %}
 
   <nav class="flex items-center justify-center gap-2 mt-10 mb-4 flex-wrap">
@@ -448,7 +489,13 @@
   {% else %}
   <div class="bg-white rounded-2xl border border-sand p-16 text-center mt-8">
     <div class="font-serif text-7xl mb-4 opacity-10">🏖</div>
-    {% if profile_key %}
+    {% if view == 'want' %}
+    <h2 class="font-serif text-2xl font-bold text-ink mb-2">Noch nichts auf der Merkliste</h2>
+    <p class="font-sans text-sm text-ink/40">Klick auf 🤍 bei einem Restaurant, um es zu speichern.</p>
+    {% elif view == 'been' %}
+    <h2 class="font-serif text-2xl font-bold text-ink mb-2">Noch keine besuchten Restaurants</h2>
+    <p class="font-sans text-sm text-ink/40">Klick auf ○ bei einem Restaurant nach dem Besuch.</p>
+    {% elif profile_key %}
     <h2 class="font-serif text-2xl font-bold text-ink mb-2">Keine Treffer</h2>
     <p class="font-sans text-sm text-ink/40">Niedrigeren Mindest-Score wählen oder Profil wechseln.</p>
     {% elif enriched_count == 0 %}
@@ -474,7 +521,43 @@
   </div>
 </footer>
 
+<!-- ═══ SCORE POPOVER ══════════════════════════════════════════════ -->
+<div id="fav-popover"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-ink/60 backdrop-blur-sm"
+     onclick="if(event.target===this)closeFavPopover()">
+  <div class="bg-cream rounded-2xl p-7 max-w-sm w-full mx-4 shadow-2xl">
+    <h3 class="font-serif text-xl font-bold text-ink mb-1">Wie war's?</h3>
+    <p class="font-sans text-sm text-ink/45 mb-6">Vergib optional eine Wertung auf der 100er-Skala.</p>
+
+    <div class="flex items-center gap-4 mb-2">
+      <input type="range" id="fav-slider" min="0" max="100" value="75"
+             class="flex-1 accent-terra h-2 cursor-pointer"
+             oninput="document.getElementById('fav-val').textContent=this.value">
+      <span id="fav-val" class="font-mono text-3xl font-bold text-terra w-14 text-right tabular-nums">75</span>
+    </div>
+    <div class="flex justify-between font-mono text-[10px] text-ink/25 mb-7 px-0.5">
+      <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
+    </div>
+
+    <div class="flex gap-2">
+      <button onclick="saveFav(parseInt(document.getElementById('fav-slider').value))"
+              class="flex-1 bg-terra text-cream font-sans text-sm font-medium py-2.5 rounded-xl hover:bg-rust transition-colors">
+        Speichern
+      </button>
+      <button onclick="saveFav(null)"
+              class="flex-1 bg-ink/8 text-ink/55 font-sans text-sm py-2.5 rounded-xl hover:bg-ink/12 transition-colors border border-ink/10">
+        Ohne Wertung
+      </button>
+      <button onclick="closeFavPopover()"
+              class="w-11 flex items-center justify-center bg-ink/8 text-ink/40 rounded-xl hover:bg-ink/12 transition-colors border border-ink/10">
+        ✕
+      </button>
+    </div>
+  </div>
+</div>
+
 <script>
+  /* ── Carousel ────────────────────────────────────────────────────── */
   function moveC(id, dir) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -486,6 +569,87 @@
     el.dataset.idx = idx;
     strip.style.transform = 'translateX(-' + (idx * 100) + '%)';
     dots.forEach((d, i) => { d.style.opacity = i === idx ? '0.9' : '0.3'; });
+  }
+
+  /* ── Favorites ───────────────────────────────────────────────────── */
+  let _fav = { placeId: null, type: null };
+
+  function toggleFav(evt, placeId, type) {
+    evt.stopPropagation();
+    const card = document.querySelector(`[data-place-id="${placeId}"]`);
+    const current = card ? card.dataset.favType : '';
+    if (current === type) {
+      // Already this type → remove
+      _doRemoveFav(placeId);
+    } else if (type === 'been') {
+      // Show score popover
+      _fav = { placeId, type };
+      document.getElementById('fav-slider').value = 75;
+      document.getElementById('fav-val').textContent = '75';
+      document.getElementById('fav-popover').classList.remove('hidden');
+    } else {
+      // "want" → save directly, no score
+      _doSaveFav(placeId, type, null);
+    }
+  }
+
+  function saveFav(score) {
+    closeFavPopover();
+    _doSaveFav(_fav.placeId, _fav.type, score);
+  }
+
+  function closeFavPopover() {
+    document.getElementById('fav-popover').classList.add('hidden');
+  }
+
+  function _doSaveFav(placeId, type, score) {
+    fetch('/api/favorite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ place_id: placeId, list_type: type, score: score })
+    }).then(() => _updateCard(placeId, type, score));
+  }
+
+  function _doRemoveFav(placeId) {
+    fetch(`/api/favorite/${placeId}`, { method: 'DELETE' })
+      .then(() => _updateCard(placeId, null, null));
+  }
+
+  function _updateCard(placeId, type, score) {
+    const card = document.querySelector(`[data-place-id="${placeId}"]`);
+    if (!card) return;
+    card.dataset.favType = type || '';
+
+    const wantBtn  = card.querySelector('[data-fav-btn="want"]');
+    const beenBtn  = card.querySelector('[data-fav-btn="been"]');
+    const scoreEl  = card.querySelector('[data-fav-score]');
+
+    if (wantBtn) {
+      const active = type === 'want';
+      wantBtn.innerHTML  = active ? '❤️' : '🤍';
+      wantBtn.className  = wantBtn.className
+        .replace(/bg-\S+|text-\S+/g, '').trim();
+      wantBtn.classList.add(...(active
+        ? ['bg-terra','text-cream','shadow-md']
+        : ['bg-ink/40','text-cream/70','hover:bg-terra/80','hover:text-cream']));
+    }
+    if (beenBtn) {
+      const active = type === 'been';
+      beenBtn.innerHTML  = active ? '✓' : '○';
+      beenBtn.className  = beenBtn.className
+        .replace(/bg-\S+|text-\S+/g, '').trim();
+      beenBtn.classList.add(...(active
+        ? ['bg-sage','text-cream','shadow-md']
+        : ['bg-ink/40','text-cream/70','hover:bg-sage/80','hover:text-cream']));
+    }
+    if (scoreEl) {
+      if (type === 'been' && score !== null && score !== undefined) {
+        scoreEl.textContent = score;
+        scoreEl.classList.remove('hidden');
+      } else {
+        scoreEl.classList.add('hidden');
+      }
+    }
   }
 </script>
 
