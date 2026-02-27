@@ -365,6 +365,163 @@ def api_similar(place_id):
     return jsonify(results)
 
 
+# ── Recommender v1 (pure SQL, no embeddings) ─────────────────────────────────
+#
+#  Kept for reference / A-B comparison.  Activate via:
+#    GET /api/similar_v1/<place_id>?n=6
+#
+#  Composite similarity (0–1):
+#    0.60 × cosine similarity of the 11 Gemini profile-score vectors  (SQL)
+#    0.25 × Jaccard similarity of SerpAPI tag arrays                   (SQL)
+#    0.10 × type bonus  (same place type)
+#    0.05 × price bonus (same level = full, ±1 level = half)
+#
+#  No numpy, no extra tables — runs entirely inside PostgreSQL.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/similar_v1/<place_id>")
+def api_similar_v1(place_id):
+    """V1 pure-SQL recommender — no embeddings required.
+
+    Composite similarity:
+      0.60 × cosine similarity of 11 Gemini profile scores
+      0.25 × Jaccard similarity of SerpAPI tag arrays
+      0.10 × type bonus
+      0.05 × price bonus
+
+    Only results with similarity ≥ 0.50 are returned.
+    """
+    n    = min(int(request.args.get("n", 6)), 20)
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                WITH target AS (
+                    SELECT
+                        COALESCE(e.family_score,    0) AS family_score,
+                        COALESCE(e.date_score,      0) AS date_score,
+                        COALESCE(e.friends_score,   0) AS friends_score,
+                        COALESCE(e.solo_score,      0) AS solo_score,
+                        COALESCE(e.relaxed_score,   0) AS relaxed_score,
+                        COALESCE(e.party_score,     0) AS party_score,
+                        COALESCE(e.special_score,   0) AS special_score,
+                        COALESCE(e.foodie_score,    0) AS foodie_score,
+                        COALESCE(e.lingering_score, 0) AS lingering_score,
+                        COALESCE(e.unique_score,    0) AS unique_score,
+                        COALESCE(e.dresscode_score, 0) AS dresscode_score,
+                        COALESCE(sd.atmosphere, '{}') || COALESCE(sd.offerings, '{}') ||
+                        COALESCE(sd.crowd,      '{}') || COALESCE(sd.highlights,'{}') AS tags,
+                        rs.raw_data->>'type' AS place_type,
+                        tr.price_level
+                    FROM  top_restaurants tr
+                    LEFT JOIN gemini_enrichments e  ON e.place_id  = tr.place_id
+                    LEFT JOIN serpapi_details    sd ON sd.place_id = tr.place_id
+                    LEFT JOIN restaurants       rs  ON rs.place_id = tr.place_id
+                    WHERE tr.place_id = %(place_id)s
+                )
+                SELECT *
+                FROM (
+                    SELECT
+                        r.place_id,
+                        r.name,
+                        r.rating,
+                        r.price_level,
+                        r.thumbnail_url,
+                        e.vibe,
+                        res2.raw_data->>'type' AS place_type,
+                        -- 60pct: cosine similarity of 11 profile-score vectors
+                        (
+                            COALESCE(e.family_score,0)    * t.family_score
+                          + COALESCE(e.date_score,0)      * t.date_score
+                          + COALESCE(e.friends_score,0)   * t.friends_score
+                          + COALESCE(e.solo_score,0)      * t.solo_score
+                          + COALESCE(e.relaxed_score,0)   * t.relaxed_score
+                          + COALESCE(e.party_score,0)     * t.party_score
+                          + COALESCE(e.special_score,0)   * t.special_score
+                          + COALESCE(e.foodie_score,0)    * t.foodie_score
+                          + COALESCE(e.lingering_score,0) * t.lingering_score
+                          + COALESCE(e.unique_score,0)    * t.unique_score
+                          + COALESCE(e.dresscode_score,0) * t.dresscode_score
+                        )::float / NULLIF(
+                            SQRT(
+                                COALESCE(e.family_score,0)^2    + COALESCE(e.date_score,0)^2
+                              + COALESCE(e.friends_score,0)^2   + COALESCE(e.solo_score,0)^2
+                              + COALESCE(e.relaxed_score,0)^2   + COALESCE(e.party_score,0)^2
+                              + COALESCE(e.special_score,0)^2   + COALESCE(e.foodie_score,0)^2
+                              + COALESCE(e.lingering_score,0)^2 + COALESCE(e.unique_score,0)^2
+                              + COALESCE(e.dresscode_score,0)^2
+                            ) * SQRT(
+                                t.family_score^2    + t.date_score^2
+                              + t.friends_score^2   + t.solo_score^2
+                              + t.relaxed_score^2   + t.party_score^2
+                              + t.special_score^2   + t.foodie_score^2
+                              + t.lingering_score^2 + t.unique_score^2
+                              + t.dresscode_score^2
+                            )
+                        , 0) * 0.60
+                        -- 25pct: Jaccard similarity of SerpAPI tag arrays
+                        + COALESCE(
+                            CARDINALITY(ARRAY(
+                                SELECT unnest(
+                                    COALESCE(sd.atmosphere,'{}') || COALESCE(sd.offerings,'{}') ||
+                                    COALESCE(sd.crowd,     '{}') || COALESCE(sd.highlights,'{}')
+                                )
+                                INTERSECT
+                                SELECT unnest(t.tags)
+                            ))::float /
+                            NULLIF(CARDINALITY(ARRAY(
+                                SELECT unnest(
+                                    COALESCE(sd.atmosphere,'{}') || COALESCE(sd.offerings,'{}') ||
+                                    COALESCE(sd.crowd,     '{}') || COALESCE(sd.highlights,'{}')
+                                )
+                                UNION
+                                SELECT unnest(t.tags)
+                            )), 0)
+                        , 0) * 0.25
+                        -- 10pct: type bonus
+                        + CASE WHEN res2.raw_data->>'type' = t.place_type THEN 0.10 ELSE 0 END
+                        -- 5pct: price level bonus
+                        + CASE
+                            WHEN r.price_level = t.price_level THEN 0.05
+                            WHEN ABS(
+                                LENGTH(COALESCE(r.price_level, '€')) -
+                                LENGTH(COALESCE(t.price_level, '€'))
+                            ) = 1 THEN 0.025
+                            ELSE 0
+                          END
+                        AS similarity
+                    FROM  top_restaurants      r
+                    JOIN  gemini_enrichments   e    ON e.place_id    = r.place_id
+                    LEFT JOIN serpapi_details  sd   ON sd.place_id   = r.place_id
+                    LEFT JOIN restaurants      res2 ON res2.place_id = r.place_id
+                    CROSS JOIN target t
+                    WHERE r.place_id != %(place_id)s
+                ) sub
+                WHERE  similarity >= 0.50
+                ORDER  BY similarity DESC
+                LIMIT  %(n)s
+            """, {"place_id": place_id, "n": n})
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    results = []
+    for row in rows:
+        pid = row["place_id"]
+        type_emoji, _ = _classify_type(row.get("place_type"))
+        results.append({
+            "place_id":    pid,
+            "name":        row["name"],
+            "rating":      float(row["rating"]) if row["rating"] else None,
+            "price_level": row.get("price_level"),
+            "type_emoji":  type_emoji,
+            "vibe":        row.get("vibe"),
+            "photo_url":   _photo_url(pid, row.get("thumbnail_url")),
+            "similarity":  round(float(row["similarity"]), 3),
+        })
+    return jsonify(results)
+
+
 # ── Main view ────────────────────────────────────────────────────────────────
 
 @app.route("/")
