@@ -64,7 +64,18 @@ LOCATIONS = [
     "port de andratx, Mallorca",
     "Bunyola, Mallorca",
     "Orient, Mallorca",
-    "Ma-10, Mallorca"
+    "Ma-10, Mallorca",
+    "Casco Antiguo Mallorca",
+    "La Lonja Mallorca",
+    "Molinar Mallorca",
+    "El Terreno Mallorca",
+    "Passeig del Born Mallorca",
+    "Jaime III Mallorca",
+    "Cala Major Mallorca",
+    "Pere Garau Mallorca",
+    "Son Armadams Mallorca",
+    "Son Vida Mallorca"
+
 ]
 
 # --- Step 2 thresholds (used by the top_restaurants DB view too) ---
