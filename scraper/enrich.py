@@ -21,7 +21,8 @@ import re
 import time
 
 import psycopg2.extras
-import requests
+from google import genai
+from google.genai import types
 
 from db import count_today_enrichments, get_connection, set_pipeline_status
 
@@ -32,13 +33,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-#MODEL = "gemini-2.0-flash"
-MODEL = "gemini-3-flash-preview"
-GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
-    f"?key={GEMINI_API_KEY}"
-)
+MODEL  = "gemini-2.5-flash"
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 PROMPT_TEMPLATE = """\
 Du bist ein ehrlicher Mallorca-Insider mit hohen Ansprüchen — kein Tourismusprospekt.
@@ -106,11 +102,8 @@ Antworte AUSSCHLIESSLICH mit diesem JSON (kein Markdown, kein Text davor/danach)
   "vibe":       "<1 Satz: Licht, Lautstärke, Gäste, Uhrzeit>"
 }}"""
 
-_SESSION = requests.Session()
-
-
 # ---------------------------------------------------------------------------
-# Gemini API
+# Gemini API (google-genai SDK)
 # ---------------------------------------------------------------------------
 
 def _extract_json(text: str) -> dict:
@@ -121,41 +114,56 @@ def _extract_json(text: str) -> dict:
 
 def call_gemini(name: str, address: str, lat=None, lng=None, retries: int = 3) -> tuple[dict, dict]:
     prompt = PROMPT_TEMPLATE.format(name=name, address=address or "Mallorca, Spanien")
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "tools": [{"googleMaps": {}}],
-        "generationConfig": {"temperature": 0.3},
+
+    # Build config — lat/lng is optional
+    config_kwargs: dict = {
+        "tools":       [types.Tool(google_maps=types.GoogleMaps())],
+        "temperature": 0.3,
     }
     if lat is not None and lng is not None:
-        payload["toolConfig"] = {
-            "retrievalConfig": {
-                "latLng": {"latitude": float(lat), "longitude": float(lng)}
-            }
-        }
+        config_kwargs["tool_config"] = types.ToolConfig(
+            retrieval_config=types.RetrievalConfig(
+                lat_lng=types.LatLng(latitude=float(lat), longitude=float(lng))
+            )
+        )
 
     for attempt in range(1, retries + 1):
         try:
-            resp = _SESSION.post(GEMINI_URL, json=payload, timeout=60)
-            resp.raise_for_status()
-            raw = resp.json()
-            text = raw["candidates"][0]["content"]["parts"][0]["text"]
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(**config_kwargs),
+            )
+            text   = response.text
             parsed = _extract_json(text)
-            return parsed, raw  # (parsed_dict, full_api_response)
-        except requests.HTTPError:
-            if resp.status_code == 429 or attempt < retries:
-                wait = 2 ** attempt
-                logger.warning(
-                    "HTTP %s – retry in %ss (%d/%d)",
-                    resp.status_code, wait, attempt, retries,
-                )
-                time.sleep(wait)
-            else:
-                raise
+
+            # Build serialisable raw dict (grounding sources + text)
+            raw: dict = {"model": MODEL, "text": text, "sources": []}
+            try:
+                gm = response.candidates[0].grounding_metadata
+                if gm and gm.grounding_chunks:
+                    raw["sources"] = [
+                        {"title": c.maps.title, "uri": c.maps.uri}
+                        for c in gm.grounding_chunks
+                        if c.maps
+                    ]
+            except (IndexError, AttributeError):
+                pass
+
+            return parsed, raw
+
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             logger.warning("Parse error attempt %d/%d: %s", attempt, retries, e)
             if attempt == retries:
                 raise
             time.sleep(2)
+        except Exception as exc:
+            if attempt < retries:
+                wait = 2 ** attempt
+                logger.warning("API error – retry in %ds (%d/%d): %s", wait, attempt, retries, exc)
+                time.sleep(wait)
+            else:
+                raise
 
 
 # ---------------------------------------------------------------------------
