@@ -33,7 +33,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-MODEL = "gemini-2.0-flash"
+#MODEL = "gemini-2.0-flash"
+MODEL = "gemini-3-flash-preview"
 GEMINI_URL = (
     f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
     f"?key={GEMINI_API_KEY}"
@@ -55,14 +56,16 @@ Bewerte für 11 Reiseprofile (1–10, ganze Zahlen):
 • Foodie       (1=Tiefkühlware aufgewärmt, 10=Küchenchef mit Handschrift, Saisonalität)
 • Verweilen    (1=Rechnung kommt ungefragt, 10=man bleibt 4 Stunden ohne Druck)
 • Geheimtipp   (1=Reisebus wartet draußen, 10=keine Touristen, Locals sitzen hier täglich)
-• Dress Code   (1=Badeshorts & Flip-Flops okay, 10=Hemd/Kleid erwartet, Jeans auffällig)
+• Dress Code   (1=Badeshorts & Flip-Flops okay, 3=Jeans ist ok, 7=T-Shirt ist fehl am Platz, 10=Hemd/Kleid erwartet, Jeans auffällig)
 
 VERBOTEN — diese Phrasen kennzeichnen schlechtes Schreiben, verwende sie nie:
 "Ein Muss", "sehr zu empfehlen", "lohnenswert", "einladend", "gemütlich",
 "kulinarisches Erlebnis", "gastronomische Reise", "ideal für", "perfekt für",
-"hervorragend", "Stammgäste schätzen besonders", "dreht sich alles um",
+"dreht sich alles um",
 "mehr als nur", "ein Ort an dem", "wer ... sucht",
 Sätze die mit "Es ist...", "Das Restaurant bietet...", "Das Restaurant ist..." beginnen
+
+Wenn du dir nicht sicher bist antworte mit "None" - Das heist aber dass es nicht angezeigt werden wird
 
 Für die drei Textfelder gilt:
 
