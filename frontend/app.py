@@ -618,6 +618,111 @@ def api_similar_v3(place_id):
     return jsonify(results)
 
 
+# ── Similar restaurants — full page view ─────────────────────────────────────
+
+@app.route("/similar/<place_id>")
+def similar_page(place_id):
+    """Full-page view: target restaurant + all similar restaurants (≥ 0.75)."""
+    sid  = request.cookies.get("sid") or ""
+
+    conn = get_db()
+    try:
+        candidates = _load_candidates(conn)
+
+        # Score using v2 logic
+        target = next((c for c in candidates if c["place_id"] == place_id), None)
+        if not target or target["scores_norm"] is None:
+            return render_template("similar.html", target=None, restaurants=[], error="Restaurant nicht gefunden.")
+
+        t_scores = target["scores_norm"]
+        t_emb    = target["emb_norm"]
+        t_slots  = target["slots_set"]
+        t_type   = target["place_type"]
+        t_price  = target["price_level"]
+        use_emb  = t_emb is not None
+
+        ranked: list[tuple[float, str]] = []
+        for cand in candidates:
+            if cand["place_id"] == place_id or cand["scores_norm"] is None:
+                continue
+            score_cos = float(np.dot(t_scores, cand["scores_norm"]))
+            c_emb     = cand["emb_norm"]
+            emb_cos   = float(np.dot(t_emb, c_emb)) if use_emb and c_emb is not None else 0.0
+            slots_j   = _jaccard(t_slots, cand["slots_set"])
+            type_b    = 0.05 if cand["place_type"] == t_type else 0.0
+            price_b   = _price_bonus(t_price, cand["price_level"])
+            if use_emb and c_emb is not None:
+                sim = 0.55 * emb_cos + 0.20 * score_cos + 0.15 * slots_j + type_b + price_b
+            else:
+                sim = 0.60 * score_cos + 0.15 * slots_j + type_b + price_b * 2
+            if sim >= 0.75:
+                ranked.append((sim, cand["place_id"]))
+
+        ranked.sort(reverse=True)
+        similar_ids   = [pid for _, pid in ranked]
+        sim_by_id     = {pid: sim for sim, pid in ranked}
+        fetch_ids     = [place_id] + similar_ids
+
+        # Fetch full restaurant data for target + similar
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT
+                    t.*,
+                    e.family_score, e.date_score,    e.friends_score, e.solo_score,
+                    e.relaxed_score, e.party_score,  e.special_score, e.foodie_score,
+                    e.lingering_score, e.unique_score, e.dresscode_score,
+                    e.summary_de, e.must_order, e.vibe,
+                    sd.highlights, sd.popular_for, sd.offerings, sd.atmosphere,
+                    sd.crowd, sd.planning, sd.amenities, sd.dining_options,
+                    sd.service_options,
+                    res.raw_data->>'type' AS place_type,
+                    f.list_type  AS fav_type,
+                    f.score      AS fav_score
+                FROM top_restaurants t
+                LEFT JOIN gemini_enrichments e  ON e.place_id  = t.place_id
+                LEFT JOIN serpapi_details    sd ON sd.place_id = t.place_id
+                LEFT JOIN restaurants       res ON res.place_id = t.place_id
+                LEFT JOIN user_favorites      f ON f.place_id  = t.place_id
+                                               AND f.session_id = %(sid)s
+                WHERE t.place_id = ANY(%(ids)s)
+            """, {"ids": fetch_ids, "sid": sid})
+            rows = {row["place_id"]: dict(row) for row in cur.fetchall()}
+
+    finally:
+        conn.close()
+
+    def _enrich(r: dict) -> dict:
+        r["city"]        = _extract_city(r.get("address"))
+        r["type_emoji"], r["type_label"] = _classify_type(r.get("place_type"))
+        photo_dir = os.path.join(PHOTOS_DIR, r["place_id"])
+        photos: list[str] = []
+        if os.path.isdir(photo_dir):
+            for i in range(MAX_PHOTOS):
+                path = os.path.join(photo_dir, f"{i}.jpg")
+                if os.path.exists(path):
+                    photos.append(f"/static/photos/{r['place_id']}/{i}.jpg")
+                else:
+                    break
+        if not photos and r.get("thumbnail_url"):
+            photos = [r["thumbnail_url"]]
+        r["photos"] = photos
+        return r
+
+    target_row = _enrich(rows[place_id]) if place_id in rows else None
+    similar_rows = []
+    for pid in similar_ids:
+        if pid in rows:
+            row = _enrich(rows[pid])
+            row["similarity"] = round(sim_by_id[pid], 3)
+            similar_rows.append(row)
+
+    return render_template("similar.html",
+                           target=target_row,
+                           restaurants=similar_rows,
+                           profiles=PROFILES,
+                           error=None)
+
+
 # ── Main view ────────────────────────────────────────────────────────────────
 
 @app.route("/")

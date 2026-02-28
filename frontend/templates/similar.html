@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ähnlich wie {{ target.name if target else '…' }} — MallorcaEat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #f5f0e8; color: #0f0e0d; }
+
+    .card { transition: transform .2s ease, box-shadow .2s ease; }
+    .card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(15,14,13,.13); }
+
+    .score-hi  { background: #d4edda; color: #1a5c2e; }
+    .score-mid { background: #fff3cd; color: #7a5500; }
+    .score-lo  { background: #ebebeb; color: #555; }
+
+    @media (min-width: 1024px) {
+      .card-featured { grid-column: span 2; }
+      .card-featured .card-img { height: 340px; }
+    }
+  </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<!-- ═══ HEADER ═══════════════════════════════════════════════════════ -->
+<header class="bg-ink text-cream sticky top-0 z-40 shadow-lg">
+  <div class="max-w-7xl mx-auto px-5 py-4 flex items-center gap-4">
+    <button onclick="history.back()"
+            class="flex items-center gap-2 font-mono text-xs text-cream/50 hover:text-cream transition-colors shrink-0">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+      </svg>
+      Zurück
+    </button>
+    <div class="w-px h-5 bg-cream/15 shrink-0"></div>
+    <div class="min-w-0">
+      <p class="font-mono text-[10px] text-cream/35 uppercase tracking-widest">Ähnlich wie</p>
+      <h1 class="font-serif text-lg font-bold text-cream leading-tight truncate">
+        {{ target.name if target else '…' }}
+      </h1>
+    </div>
+    <a href="/" class="ml-auto font-mono text-[10px] text-cream/30 hover:text-cream/60 transition-colors shrink-0 uppercase tracking-widest">
+      MallorcaEat
+    </a>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-5 py-8">
+
+{% if error %}
+  <p class="text-center font-mono text-sm text-ink/40 py-20">{{ error }}</p>
+
+{% elif target %}
+
+  <!-- ═══ REFERENZ-KARTE ════════════════════════════════════════════ -->
+  <div class="mb-8">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="font-mono text-[10px] uppercase tracking-widest text-cream bg-ink px-3 py-1 rounded-full">Du hast hier geklickt</span>
+      <div class="flex-1 h-px bg-sand"></div>
+    </div>
+
+    {% set r = target %}
+    {% set scores = [
+      ("family",    "👨‍👩‍👧", "Familie",    r.family_score),
+      ("date",      "💑",    "Date Night", r.date_score),
+      ("friends",   "👯",    "Friends",    r.friends_score),
+      ("solo",      "🧍",    "Solo",       r.solo_score),
+      ("relaxed",   "😌",    "Entspannt",  r.relaxed_score),
+      ("party",     "🎉",    "Party",      r.party_score),
+      ("special",   "✨",    "Besonders",  r.special_score),
+      ("foodie",    "🍽️",   "Foodie",     r.foodie_score),
+      ("lingering", "☕",    "Verweilen",  r.lingering_score),
+      ("unique",    "💎",    "Geheimtipp", r.unique_score),
+      ("dresscode", "👔",    "Dress Code", r.dresscode_score),
+    ] %}
+
+    <div class="card group bg-white rounded-2xl overflow-hidden flex flex-col border-2 border-ink shadow-md max-w-sm">
+
+      <!-- Image carousel -->
+      <div class="card-img relative h-52 overflow-hidden bg-gradient-to-br from-sand to-stone-100 group" id="ctarget" data-idx="0">
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0">
+          <span class="text-7xl opacity-20">{{ r.type_emoji }}</span>
+        </div>
+
+        <!-- Favoriten-Buttons -->
+        <div class="absolute top-2 left-2 flex gap-1.5 z-20">
+          <button data-fav-btn="want"
+                  onclick="toggleFav(event,'{{ r.place_id }}','want')"
+                  title="Da möchte ich hin"
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-base backdrop-blur-sm transition-all
+                         {{ 'bg-terra text-cream shadow-md' if r.fav_type == 'want' else 'bg-ink/40 text-cream/70 hover:bg-terra/80 hover:text-cream' }}">
+            {{ '🤍' if r.fav_type != 'want' else '❤️' }}
+          </button>
+          <button data-fav-btn="been"
+                  onclick="toggleFav(event,'{{ r.place_id }}','been')"
+                  title="Da war ich"
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-base backdrop-blur-sm transition-all
+                         {{ 'bg-sage text-cream shadow-md' if r.fav_type == 'been' else 'bg-ink/40 text-cream/70 hover:bg-sage/80 hover:text-cream' }}">
+            {{ '✓' if r.fav_type == 'been' else '○' }}
+          </button>
+          {% if r.fav_type == 'been' and r.fav_score is not none %}
+          <span data-fav-score class="bg-sage text-cream font-mono text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center shadow-md">{{ r.fav_score }}</span>
+          {% else %}
+          <span data-fav-score class="hidden bg-sage text-cream font-mono text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center shadow-md"></span>
+          {% endif %}
+        </div>
+
+        {% if r.photos %}
+        <div class="flex h-full relative z-10" data-strip style="transition:transform .3s ease">
+          {% for photo in r.photos %}
+          <img src="{{ photo }}" alt="{{ r.name }}" class="shrink-0 object-cover" style="min-width:100%;width:100%" loading="lazy" onerror="this.style.display='none'">
+          {% endfor %}
+        </div>
+        {% if r.photos|length > 1 %}
+        <button onclick="moveC('ctarget',-1);event.stopPropagation()" class="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-ink/55 text-cream text-base leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-ink/80 focus:outline-none z-20">‹</button>
+        <button onclick="moveC('ctarget',1);event.stopPropagation()" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-ink/55 text-cream text-base leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-ink/80 focus:outline-none z-20">›</button>
+        <div class="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 pointer-events-none z-20" data-dots>
+          {% for photo in r.photos %}<span class="block w-1.5 h-1.5 rounded-full bg-white transition-opacity {% if loop.first %}opacity-90{% else %}opacity-30{% endif %}"></span>{% endfor %}
+        </div>
+        {% endif %}
+        {% endif %}
+
+        {% if r.price_level %}
+        <span class="absolute top-3 right-3 font-mono text-xs bg-ink/75 text-cream px-2.5 py-0.5 rounded-full backdrop-blur-sm z-20">{{ r.price_level }}</span>
+        {% endif %}
+      </div>
+
+      <!-- Body -->
+      <div class="p-5 flex flex-col flex-1">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <h3 class="font-serif text-xl font-bold text-ink leading-tight">{{ r.name }}</h3>
+          <div class="shrink-0 flex items-center gap-1 bg-ink text-cream rounded-full pl-2.5 pr-2.5 py-0.5">
+            <span class="font-mono text-xs font-bold {% if (r.rating * 20)|round|int >= 94 %}text-green-400{% elif (r.rating * 20)|round|int >= 88 %}text-terra{% else %}text-cream/70{% endif %}">{{ (r.rating * 20)|round|int }}</span>
+            <span class="font-mono text-[9px] text-cream/35">/100</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap mb-3">
+          {% if r.city %}<span class="font-mono text-[10px] text-ink/45 flex items-center gap-0.5"><svg class="inline w-2.5 h-2.5 opacity-50 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>{{ r.city }}</span>{% endif %}
+          <span class="font-mono text-[10px] text-terra/70 border border-terra/20 bg-terra/5 px-2 py-0.5 rounded-full leading-none">{{ r.type_emoji }} {{ r.type_label }}</span>
+          <span class="font-mono text-[10px] text-ink/25 ml-auto">{{ r.rating_count | int }} ✦</span>
+        </div>
+        {% if r.vibe %}<p class="font-sans text-xs italic text-ink/50 leading-snug mb-3 line-clamp-2">„{{ r.vibe }}"</p>{% endif %}
+        {% if r.atmosphere or r.highlights %}
+        <div class="flex flex-wrap gap-1 mb-3">
+          {% for tag in (r.atmosphere or [])[:3] %}<span class="font-mono text-[10px] text-ink/45 bg-sand/50 border border-sand px-2 py-0.5 rounded-full">{{ tag }}</span>{% endfor %}
+          {% for tag in (r.highlights or [])[:2] %}<span class="font-mono text-[10px] text-sage/80 border border-sage/20 bg-sage/5 px-2 py-0.5 rounded-full">✦ {{ tag }}</span>{% endfor %}
+        </div>
+        {% elif r.categories %}
+        <div class="flex flex-wrap gap-1 mb-3">{% for cat in r.categories[:3] %}<span class="font-mono text-[10px] uppercase tracking-wide text-terra/70 border border-terra/15 px-2 py-0.5 rounded-full">{{ cat }}</span>{% endfor %}</div>
+        {% endif %}
+        {% if r.vibe %}
+        <div class="flex flex-wrap gap-1 mb-3">
+          {% for key, emoji, label, score in scores %}{% if score %}<span title="{{ label }}: {{ score }}/10" class="font-mono text-[10px] px-2 py-0.5 rounded-full font-medium {{ 'score-hi' if score >= 8 else 'score-mid' if score >= 6 else 'score-lo' }}">{{ emoji }} {{ score }}</span>{% endif %}{% endfor %}
+        </div>
+        {% if r.must_order %}<div class="flex items-start gap-1.5 mb-2"><span class="text-terra text-xs shrink-0 mt-0.5">🍴</span><p class="font-sans text-xs text-ink/60 leading-snug">{{ r.must_order }}</p></div>{% endif %}
+        {% if r.summary_de or r.popular_for or r.offerings %}
+        <details class="mt-1 group">
+          <summary class="font-mono text-[10px] uppercase tracking-widest text-terra/70 cursor-pointer hover:text-terra select-none list-none flex items-center gap-1">
+            <span class="group-open:hidden">▸ Mehr erfahren</span><span class="hidden group-open:inline">▾ Weniger</span>
+          </summary>
+          <div class="mt-2 space-y-2">
+            {% if r.summary_de %}<p class="font-sans text-xs text-ink/55 leading-relaxed border-l-2 border-terra/25 pl-3">{{ r.summary_de }}</p>{% endif %}
+            {% if r.popular_for %}<div class="flex flex-wrap gap-1">{% for t in r.popular_for %}<span class="font-mono text-[10px] bg-cream border border-sand px-2 py-0.5 rounded-full text-ink/55">🕐 {{ t }}</span>{% endfor %}</div>{% endif %}
+            {% if r.offerings %}<div class="flex flex-wrap gap-1">{% for t in (r.offerings or [])[:8] %}<span class="font-mono text-[10px] bg-cream border border-sand px-2 py-0.5 rounded-full text-ink/55">🍹 {{ t }}</span>{% endfor %}</div>{% endif %}
+          </div>
+        </details>
+        {% endif %}
+        {% endif %}
+        <div class="flex-1"></div>
+        <div class="mt-4 pt-3 border-t border-sand flex items-center justify-between gap-2 flex-wrap">
+          {% if r.address %}<p class="font-mono text-[10px] text-ink/30 leading-snug flex-1 min-w-0 truncate">📍 {{ r.address.split(',')[0] }}</p>{% endif %}
+          {% if r.website %}<a href="{{ r.website }}" target="_blank" rel="noopener" class="font-mono text-[10px] text-terra hover:text-rust uppercase tracking-wide">Web ↗</a>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ ÄHNLICHE RESTAURANTS ════════════════════════════════════ -->
+  <div class="flex items-center gap-3 mb-6">
+    <div class="flex-1 h-px bg-sand"></div>
+    <span class="font-mono text-[10px] uppercase tracking-widest text-ink/35">
+      {{ restaurants | length }} ähnliche Restaurants (≥ 75%)
+    </span>
+    <div class="flex-1 h-px bg-sand"></div>
+  </div>
+
+  {% if restaurants %}
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+    {% for r in restaurants %}
+
+    {% set scores = [
+      ("family",    "👨‍👩‍👧", "Familie",    r.family_score),
+      ("date",      "💑",    "Date Night", r.date_score),
+      ("friends",   "👯",    "Friends",    r.friends_score),
+      ("solo",      "🧍",    "Solo",       r.solo_score),
+      ("relaxed",   "😌",    "Entspannt",  r.relaxed_score),
+      ("party",     "🎉",    "Party",      r.party_score),
+      ("special",   "✨",    "Besonders",  r.special_score),
+      ("foodie",    "🍽️",   "Foodie",     r.foodie_score),
+      ("lingering", "☕",    "Verweilen",  r.lingering_score),
+      ("unique",    "💎",    "Geheimtipp", r.unique_score),
+      ("dresscode", "👔",    "Dress Code", r.dresscode_score),
+    ] %}
+
+    {% set sim_pct = (r.similarity * 100) | round | int %}
+    {% set sim_cls = 'bg-green-100 text-green-800' if sim_pct >= 85 else 'bg-amber-100 text-amber-800' if sim_pct >= 75 else 'bg-stone-100 text-stone-500' %}
+
+    <div class="card group bg-white rounded-2xl overflow-hidden flex flex-col border border-sand {{ 'card-featured' if loop.first else '' }}"
+         data-place-id="{{ r.place_id }}"
+         data-fav-type="{{ r.fav_type or '' }}">
+
+      <!-- Image carousel -->
+      <div class="card-img relative h-52 overflow-hidden bg-gradient-to-br from-sand to-stone-100 group" id="c{{ loop.index }}" data-idx="0">
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0">
+          <span class="text-7xl opacity-20">{{ r.type_emoji }}</span>
+        </div>
+
+        <!-- Favoriten-Buttons -->
+        <div class="absolute top-2 left-2 flex gap-1.5 z-20">
+          <button data-fav-btn="want"
+                  onclick="toggleFav(event,'{{ r.place_id }}','want')"
+                  title="Da möchte ich hin"
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-base backdrop-blur-sm transition-all
+                         {{ 'bg-terra text-cream shadow-md' if r.fav_type == 'want' else 'bg-ink/40 text-cream/70 hover:bg-terra/80 hover:text-cream' }}">
+            {{ '🤍' if r.fav_type != 'want' else '❤️' }}
+          </button>
+          <button data-fav-btn="been"
+                  onclick="toggleFav(event,'{{ r.place_id }}','been')"
+                  title="Da war ich"
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-base backdrop-blur-sm transition-all
+                         {{ 'bg-sage text-cream shadow-md' if r.fav_type == 'been' else 'bg-ink/40 text-cream/70 hover:bg-sage/80 hover:text-cream' }}">
+            {{ '✓' if r.fav_type == 'been' else '○' }}
+          </button>
+          {% if r.fav_type == 'been' and r.fav_score is not none %}
+          <span data-fav-score class="bg-sage text-cream font-mono text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center shadow-md">{{ r.fav_score }}</span>
+          {% else %}
+          <span data-fav-score class="hidden bg-sage text-cream font-mono text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center shadow-md"></span>
+          {% endif %}
+        </div>
+
+        <!-- Similarity badge (top-right, above price) -->
+        <span class="absolute top-3 right-3 font-mono text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm z-20 {{ sim_cls }}">≈ {{ sim_pct }}%</span>
+
+        {% if r.photos %}
+        <div class="flex h-full relative z-10" data-strip style="transition:transform .3s ease">
+          {% for photo in r.photos %}
+          <img src="{{ photo }}" alt="{{ r.name }}" class="shrink-0 object-cover" style="min-width:100%;width:100%" loading="lazy" onerror="this.style.display='none'">
+          {% endfor %}
+        </div>
+        {% if r.photos|length > 1 %}
+        <button onclick="moveC('c{{ loop.index }}',-1);event.stopPropagation()" class="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-ink/55 text-cream text-base leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-ink/80 focus:outline-none z-20">‹</button>
+        <button onclick="moveC('c{{ loop.index }}',1);event.stopPropagation()" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-ink/55 text-cream text-base leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-ink/80 focus:outline-none z-20">›</button>
+        <div class="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 pointer-events-none z-20" data-dots>
+          {% for photo in r.photos %}<span class="block w-1.5 h-1.5 rounded-full bg-white transition-opacity {% if loop.first %}opacity-90{% else %}opacity-30{% endif %}"></span>{% endfor %}
+        </div>
+        {% endif %}
+        {% endif %}
+      </div>
+
+      <!-- Body -->
+      <div class="p-5 flex flex-col flex-1">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <h3 class="font-serif text-xl font-bold text-ink leading-tight">{{ r.name }}</h3>
+          <div class="shrink-0 flex items-center gap-1 bg-ink text-cream rounded-full pl-2.5 pr-2.5 py-0.5">
+            <span class="font-mono text-xs font-bold {% if (r.rating * 20)|round|int >= 94 %}text-green-400{% elif (r.rating * 20)|round|int >= 88 %}text-terra{% else %}text-cream/70{% endif %}">{{ (r.rating * 20)|round|int }}</span>
+            <span class="font-mono text-[9px] text-cream/35">/100</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap mb-3">
+          {% if r.city %}<span class="font-mono text-[10px] text-ink/45 flex items-center gap-0.5"><svg class="inline w-2.5 h-2.5 opacity-50 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>{{ r.city }}</span>{% endif %}
+          <span class="font-mono text-[10px] text-terra/70 border border-terra/20 bg-terra/5 px-2 py-0.5 rounded-full leading-none">{{ r.type_emoji }} {{ r.type_label }}</span>
+          <span class="font-mono text-[10px] text-ink/25 ml-auto">{{ r.rating_count | int }} ✦</span>
+        </div>
+        {% if r.vibe %}<p class="font-sans text-xs italic text-ink/50 leading-snug mb-3 line-clamp-2">„{{ r.vibe }}"</p>{% endif %}
+        {% if r.atmosphere or r.highlights %}
+        <div class="flex flex-wrap gap-1 mb-3">
+          {% for tag in (r.atmosphere or [])[:3] %}<span class="font-mono text-[10px] text-ink/45 bg-sand/50 border border-sand px-2 py-0.5 rounded-full">{{ tag }}</span>{% endfor %}
+          {% for tag in (r.highlights or [])[:2] %}<span class="font-mono text-[10px] text-sage/80 border border-sage/20 bg-sage/5 px-2 py-0.5 rounded-full">✦ {{ tag }}</span>{% endfor %}
+        </div>
+        {% elif r.categories %}
+        <div class="flex flex-wrap gap-1 mb-3">{% for cat in r.categories[:3] %}<span class="font-mono text-[10px] uppercase tracking-wide text-terra/70 border border-terra/15 px-2 py-0.5 rounded-full">{{ cat }}</span>{% endfor %}</div>
+        {% endif %}
+        {% if r.vibe %}
+        <div class="flex flex-wrap gap-1 mb-3">
+          {% for key, emoji, label, score in scores %}{% if score %}<span title="{{ label }}: {{ score }}/10" class="font-mono text-[10px] px-2 py-0.5 rounded-full font-medium {{ 'score-hi' if score >= 8 else 'score-mid' if score >= 6 else 'score-lo' }}">{{ emoji }} {{ score }}</span>{% endif %}{% endfor %}
+        </div>
+        {% if r.must_order %}<div class="flex items-start gap-1.5 mb-2"><span class="text-terra text-xs shrink-0 mt-0.5">🍴</span><p class="font-sans text-xs text-ink/60 leading-snug">{{ r.must_order }}</p></div>{% endif %}
+        {% if r.summary_de or r.popular_for or r.offerings %}
+        <details class="mt-1 group">
+          <summary class="font-mono text-[10px] uppercase tracking-widest text-terra/70 cursor-pointer hover:text-terra select-none list-none flex items-center gap-1">
+            <span class="group-open:hidden">▸ Mehr erfahren</span><span class="hidden group-open:inline">▾ Weniger</span>
+          </summary>
+          <div class="mt-2 space-y-2">
+            {% if r.summary_de %}<p class="font-sans text-xs text-ink/55 leading-relaxed border-l-2 border-terra/25 pl-3">{{ r.summary_de }}</p>{% endif %}
+            {% if r.popular_for %}<div class="flex flex-wrap gap-1">{% for t in r.popular_for %}<span class="font-mono text-[10px] bg-cream border border-sand px-2 py-0.5 rounded-full text-ink/55">🕐 {{ t }}</span>{% endfor %}</div>{% endif %}
+            {% if r.offerings %}<div class="flex flex-wrap gap-1">{% for t in (r.offerings or [])[:8] %}<span class="font-mono text-[10px] bg-cream border border-sand px-2 py-0.5 rounded-full text-ink/55">🍹 {{ t }}</span>{% endfor %}</div>{% endif %}
+          </div>
+        </details>
+        {% endif %}
+        {% endif %}
+        <div class="flex-1"></div>
+        <div class="mt-4 pt-3 border-t border-sand flex items-center justify-between gap-2 flex-wrap">
+          {% if r.address %}<p class="font-mono text-[10px] text-ink/30 leading-snug flex-1 min-w-0 truncate">📍 {{ r.address.split(',')[0] }}</p>{% endif %}
+          <div class="flex gap-3 shrink-0 items-center">
+            <a href="/similar/{{ r.place_id }}"
+               class="font-mono text-[10px] text-ink/35 hover:text-terra uppercase tracking-wide transition-colors">
+              ≈ Ähnliche
+            </a>
+            {% if r.website %}<a href="{{ r.website }}" target="_blank" rel="noopener" class="font-mono text-[10px] text-terra hover:text-rust uppercase tracking-wide">Web ↗</a>{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <p class="text-center font-mono text-sm text-ink/30 py-16">Keine ähnlichen Restaurants mit ≥ 75% Übereinstimmung gefunden.</p>
+  {% endif %}
+
+{% endif %}
+
+</main>
+
+<!-- ═══ FAV SCORE POPOVER ════════════════════════════════════════════ -->
+<div id="fav-popover"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-ink/60 backdrop-blur-sm px-4"
+     onclick="if(event.target===this)closeFavPopover()">
+  <div class="bg-cream rounded-2xl shadow-2xl w-full max-w-xs p-7">
+    <h3 class="font-serif text-lg font-bold text-ink mb-1">Deine Wertung</h3>
+    <p class="font-mono text-[10px] text-ink/35 uppercase tracking-widest mb-6">Wie gut hat es dir gefallen?</p>
+    <div class="flex items-center gap-4 mb-2">
+      <input id="fav-slider" type="range" min="0" max="100" value="75"
+             class="flex-1 accent-terra h-2 cursor-pointer"
+             oninput="document.getElementById('fav-val').textContent=this.value">
+      <span id="fav-val" class="font-mono text-3xl font-bold text-terra w-14 text-right tabular-nums">75</span>
+    </div>
+    <div class="flex justify-between font-mono text-[10px] text-ink/25 mb-7 px-0.5">
+      <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="saveFav(parseInt(document.getElementById('fav-slider').value))"
+              class="flex-1 bg-terra text-cream font-sans text-sm font-medium py-2.5 rounded-xl hover:bg-rust transition-colors">Speichern</button>
+      <button onclick="saveFav(null)"
+              class="flex-1 bg-ink/8 text-ink/55 font-sans text-sm py-2.5 rounded-xl hover:bg-ink/12 transition-colors border border-ink/10">Ohne Wertung</button>
+      <button onclick="closeFavPopover()"
+              class="w-11 flex items-center justify-center bg-ink/8 text-ink/40 rounded-xl hover:bg-ink/12 transition-colors border border-ink/10">✕</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ── Carousel ────────────────────────────────────────────────────── */
+  function moveC(id, dir) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const strip = el.querySelector('[data-strip]');
+    const dots  = el.querySelectorAll('[data-dots] span');
+    const total = strip.children.length;
+    let idx = parseInt(el.dataset.idx || '0', 10);
+    idx = (idx + dir + total) % total;
+    el.dataset.idx = idx;
+    strip.style.transform = 'translateX(-' + (idx * 100) + '%)';
+    dots.forEach((d, i) => { d.style.opacity = i === idx ? '0.9' : '0.3'; });
+  }
+
+  /* ── Favorites ───────────────────────────────────────────────────── */
+  let _fav = { placeId: null, type: null };
+
+  function toggleFav(evt, placeId, type) {
+    evt.stopPropagation();
+    const card    = document.querySelector(`[data-place-id="${placeId}"]`);
+    const current = card ? card.dataset.favType : '';
+    if (current === type) {
+      _doRemoveFav(placeId);
+    } else if (type === 'been') {
+      _fav = { placeId, type };
+      document.getElementById('fav-slider').value = 75;
+      document.getElementById('fav-val').textContent = '75';
+      document.getElementById('fav-popover').classList.remove('hidden');
+    } else {
+      _doSaveFav(placeId, type, null);
+    }
+  }
+
+  function saveFav(score) {
+    closeFavPopover();
+    _doSaveFav(_fav.placeId, _fav.type, score);
+  }
+
+  function closeFavPopover() {
+    document.getElementById('fav-popover').classList.add('hidden');
+  }
+
+  function _doSaveFav(placeId, type, score) {
+    fetch('/api/favorite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ place_id: placeId, list_type: type, score: score })
+    }).then(() => _updateCard(placeId, type, score));
+  }
+
+  function _doRemoveFav(placeId) {
+    fetch(`/api/favorite/${placeId}`, { method: 'DELETE' })
+      .then(() => _updateCard(placeId, null, null));
+  }
+
+  function _updateCard(placeId, type, score) {
+    const card = document.querySelector(`[data-place-id="${placeId}"]`);
+    if (!card) return;
+    card.dataset.favType = type || '';
+    const wantBtn = card.querySelector('[data-fav-btn="want"]');
+    const beenBtn = card.querySelector('[data-fav-btn="been"]');
+    const scoreEl = card.querySelector('[data-fav-score]');
+    if (wantBtn) {
+      const active = type === 'want';
+      wantBtn.innerHTML = active ? '❤️' : '🤍';
+      wantBtn.className = wantBtn.className.replace(/bg-\S+|text-\S+/g, '').trim();
+      wantBtn.classList.add(...(active ? ['bg-terra','text-cream','shadow-md'] : ['bg-ink/40','text-cream/70','hover:bg-terra/80','hover:text-cream']));
+    }
+    if (beenBtn) {
+      const active = type === 'been';
+      beenBtn.innerHTML = active ? '✓' : '○';
+      beenBtn.className = beenBtn.className.replace(/bg-\S+|text-\S+/g, '').trim();
+      beenBtn.classList.add(...(active ? ['bg-sage','text-cream','shadow-md'] : ['bg-ink/40','text-cream/70','hover:bg-sage/80','hover:text-cream']));
+    }
+    if (scoreEl) {
+      if (type === 'been' && score !== null) {
+        scoreEl.textContent = score;
+        scoreEl.classList.remove('hidden');
+      } else {
+        scoreEl.classList.add('hidden');
+      }
+    }
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeFavPopover();
+  });
+</script>
+
+</body>
+</html>
