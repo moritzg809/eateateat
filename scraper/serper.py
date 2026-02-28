@@ -67,12 +67,34 @@ def search_maps(query: str, location: str, retries: int = 5) -> dict:
                     logger.warning("429 from Serper – all keys exhausted, waiting %ss", wait)
                     time.sleep(wait)
                     rotator.reset()
+            elif resp.status_code == 400:
+                try:
+                    body = resp.json()
+                except Exception:
+                    body = {}
+                msg = body.get("message", resp.text[:200])
+                if "credit" in msg.lower():
+                    # Out of credits on this key — try the next one
+                    if rotator.rotate():
+                        logger.warning("400 'Not enough credits' – rotated to next key (attempt %d/%d)",
+                                       attempt, retries)
+                        continue
+                    else:
+                        logger.error("400 'Not enough credits' – all keys exhausted")
+                        raise RuntimeError("Serper API: all keys out of credits") from None
+                else:
+                    # Other 400 — not retryable
+                    logger.error("HTTP 400 from Serper (not retrying) | %s", msg)
+                    raise RuntimeError(f"Serper API error: {msg}") from None
             elif attempt < retries:
                 wait = 2 ** attempt
-                logger.warning("HTTP %s – retry in %ss (%d/%d)",
-                               resp.status_code, wait, attempt, retries)
+                logger.warning("HTTP %s – retry in %ss (%d/%d) | body: %s",
+                               resp.status_code, wait, attempt, retries,
+                               resp.text[:300])
                 time.sleep(wait)
             else:
+                logger.error("HTTP %s – giving up | body: %s",
+                             resp.status_code, resp.text[:500])
                 raise
         except requests.exceptions.RequestException as e:
             if attempt < retries:
