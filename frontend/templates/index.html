@@ -165,6 +165,53 @@
   </form>
 </div>
 
+<!-- ═══════════════════════ TYPE + TAG FILTERS ═══════════════════════ -->
+{% if available_types or available_tags %}
+<div class="max-w-7xl mx-auto px-5 mt-3 space-y-2">
+
+  {% if available_types %}
+  <div class="flex flex-wrap gap-1.5 items-center">
+    <span class="font-mono text-[10px] text-ink/30 uppercase tracking-widest shrink-0 mr-1">Typ</span>
+    <a href="?{{ request.query_string.decode().replace('&type_filter=' ~ type_filter, '').replace('type_filter=' ~ type_filter, '').replace('&&','&').strip('&') }}"
+       class="font-mono text-[10px] px-2.5 py-1 rounded-full border transition
+              {{ 'bg-ink text-cream border-ink' if not type_filter else 'border-sand text-ink/40 hover:border-ink/30 hover:text-ink/60' }}">
+      Alle
+    </a>
+    {% for t in available_types %}
+    {% set qs = request.query_string.decode() %}
+    {% set qs_clean = qs.replace('&type_filter=' ~ type_filter, '').replace('type_filter=' ~ type_filter, '').replace('&&','&').strip('&') %}
+    <a href="?{{ qs_clean }}{% if qs_clean %}&{% endif %}type_filter={{ t | urlencode }}"
+       class="font-mono text-[10px] px-2.5 py-1 rounded-full border transition
+              {{ 'bg-terra text-cream border-terra' if type_filter == t else 'border-sand text-ink/40 hover:border-terra/40 hover:text-terra' }}">
+      {{ t }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if available_tags %}
+  <div class="flex flex-wrap gap-1.5 items-center">
+    <span class="font-mono text-[10px] text-ink/30 uppercase tracking-widest shrink-0 mr-1">Stimmung</span>
+    <a href="?{{ request.query_string.decode().replace('&tag_filter=' ~ tag_filter, '').replace('tag_filter=' ~ tag_filter, '').replace('&&','&').strip('&') }}"
+       class="font-mono text-[10px] px-2.5 py-1 rounded-full border transition
+              {{ 'bg-ink text-cream border-ink' if not tag_filter else 'border-sand text-ink/40 hover:border-ink/30 hover:text-ink/60' }}">
+      Alle
+    </a>
+    {% for tag in available_tags %}
+    {% set qs = request.query_string.decode() %}
+    {% set qs_clean = qs.replace('&tag_filter=' ~ tag_filter, '').replace('tag_filter=' ~ tag_filter, '').replace('&&','&').strip('&') %}
+    <a href="?{{ qs_clean }}{% if qs_clean %}&{% endif %}tag_filter={{ tag | urlencode }}"
+       class="font-mono text-[10px] px-2.5 py-1 rounded-full border transition
+              {{ 'bg-sage text-cream border-sage' if tag_filter == tag else 'border-sand text-ink/40 hover:border-sage/40 hover:text-sage' }}">
+      {{ tag }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
 <!-- ═══════════════════════ MAIN GRID ═══════════════════════ -->
 <main class="max-w-7xl mx-auto px-5 py-6 pb-20">
 
@@ -417,6 +464,8 @@
                class="font-mono text-[10px] text-ink/35 hover:text-terra uppercase tracking-wide transition-colors">
               ≈ Ähnliche
             </a>
+            <a href="https://www.google.com/maps/place/?q=place_id:{{ r.place_id }}" target="_blank" rel="noopener"
+               class="font-mono text-[10px] text-ink/35 hover:text-terra uppercase tracking-wide transition-colors">Maps ↗</a>
             {% if r.website %}
             <a href="{{ r.website }}" target="_blank" rel="noopener"
                class="font-mono text-[10px] text-terra hover:text-rust uppercase tracking-wide">Web ↗</a>

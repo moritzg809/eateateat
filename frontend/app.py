@@ -740,7 +740,9 @@ def index():
     profile_key = request.args.get("profile", "").strip()
     min_score   = int(request.args.get("min_score", 7))
     page        = max(1, int(request.args.get("page", 1) or 1))
-    view        = request.args.get("view", "").strip()  # "" | "want" | "been"
+    view        = request.args.get("view", "").strip()   # "" | "want" | "been"
+    type_filter = request.args.get("type_filter", "").strip()
+    tag_filter  = request.args.get("tag_filter",  "").strip()
 
     ctx = {
         "total": 0, "top_count": 0, "avg_rating": "–", "enriched_count": 0,
@@ -750,6 +752,8 @@ def index():
         "profiles": PROFILES,
         "page": page, "total_pages": 1, "total_filtered": 0, "per_page": PER_PAGE,
         "view": view,
+        "type_filter": type_filter, "tag_filter": tag_filter,
+        "available_types": [], "available_tags": [],
         "error": None,
     }
 
@@ -772,6 +776,29 @@ def index():
             cur.execute("SELECT DISTINCT location FROM serper_cache ORDER BY location")
             ctx["locations"] = [r["location"] for r in cur.fetchall()]
 
+            # Available types for filter UI (top 15 by count)
+            cur.execute("""
+                SELECT res.raw_data->>'type' AS place_type, COUNT(*) AS n
+                FROM top_restaurants t
+                JOIN restaurants res ON res.place_id = t.place_id
+                WHERE res.raw_data->>'type' IS NOT NULL
+                GROUP BY 1 ORDER BY 2 DESC LIMIT 15
+            """)
+            ctx["available_types"] = [r["place_type"] for r in cur.fetchall() if r["place_type"]]
+
+            # Available atmosphere+highlight tags for filter UI (top 20 by count)
+            cur.execute("""
+                SELECT tag, COUNT(*) AS n
+                FROM top_restaurants t
+                JOIN serpapi_details sd ON sd.place_id = t.place_id
+                CROSS JOIN LATERAL unnest(
+                    COALESCE(sd.atmosphere,'{}') || COALESCE(sd.highlights,'{}')
+                ) AS tag
+                WHERE tag IS NOT NULL AND tag <> ''
+                GROUP BY 1 ORDER BY 2 DESC LIMIT 20
+            """)
+            ctx["available_tags"] = [r["tag"] for r in cur.fetchall()]
+
             # Build main query
             score_col  = f"{profile_key}_score" if profile_key else None
             conditions = ["1=1"]
@@ -789,6 +816,15 @@ def index():
             if view in ("want", "been"):
                 conditions.append("f.list_type = %(view)s")
                 params["view"] = view
+            if type_filter:
+                conditions.append("res.raw_data->>'type' = %(type_filter)s")
+                params["type_filter"] = type_filter
+            if tag_filter:
+                conditions.append(
+                    "(%(tag_filter)s = ANY(COALESCE(sd.atmosphere,'{}'))"
+                    " OR %(tag_filter)s = ANY(COALESCE(sd.highlights,'{}')))"
+                )
+                params["tag_filter"] = tag_filter
 
             where = " AND ".join(conditions)
             order = f"e.{score_col} DESC, t.rating DESC" if score_col else "t.rating DESC, t.rating_count DESC"
@@ -797,8 +833,10 @@ def index():
             cur.execute(f"""
                 SELECT COUNT(*) AS n
                 FROM top_restaurants t
-                LEFT JOIN gemini_enrichments e  ON e.place_id = t.place_id
-                LEFT JOIN user_favorites      f ON f.place_id = t.place_id
+                LEFT JOIN gemini_enrichments e  ON e.place_id  = t.place_id
+                LEFT JOIN serpapi_details    sd ON sd.place_id = t.place_id
+                LEFT JOIN restaurants       res ON res.place_id = t.place_id
+                LEFT JOIN user_favorites      f ON f.place_id  = t.place_id
                                                AND f.session_id = %(sid)s
                 WHERE {where}
             """, params)

@@ -194,7 +194,11 @@
         <div class="flex-1"></div>
         <div class="mt-4 pt-3 border-t border-sand flex items-center justify-between gap-2 flex-wrap">
           {% if r.address %}<p class="font-mono text-[10px] text-ink/30 leading-snug flex-1 min-w-0 truncate">📍 {{ r.address.split(',')[0] }}</p>{% endif %}
-          {% if r.website %}<a href="{{ r.website }}" target="_blank" rel="noopener" class="font-mono text-[10px] text-terra hover:text-rust uppercase tracking-wide">Web ↗</a>{% endif %}
+          <div class="flex gap-3 shrink-0 items-center">
+            <a href="https://www.google.com/maps/place/?q=place_id:{{ r.place_id }}" target="_blank" rel="noopener"
+               class="font-mono text-[10px] text-ink/35 hover:text-terra uppercase tracking-wide transition-colors">Maps ↗</a>
+            {% if r.website %}<a href="{{ r.website }}" target="_blank" rel="noopener" class="font-mono text-[10px] text-terra hover:text-rust uppercase tracking-wide">Web ↗</a>{% endif %}
+          </div>
         </div>
       </div>
     </div>
@@ -331,6 +335,8 @@
                class="font-mono text-[10px] text-ink/35 hover:text-terra uppercase tracking-wide transition-colors">
               ≈ Ähnliche
             </a>
+            <a href="https://www.google.com/maps/place/?q=place_id:{{ r.place_id }}" target="_blank" rel="noopener"
+               class="font-mono text-[10px] text-ink/35 hover:text-terra uppercase tracking-wide transition-colors">Maps ↗</a>
             {% if r.website %}<a href="{{ r.website }}" target="_blank" rel="noopener" class="font-mono text-[10px] text-terra hover:text-rust uppercase tracking-wide">Web ↗</a>{% endif %}
           </div>
         </div>
