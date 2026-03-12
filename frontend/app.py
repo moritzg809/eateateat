@@ -174,6 +174,44 @@ _SCORE_COLS = [
     "lingering_score","unique_score","dresscode_score",
 ]
 
+# ── Z-Score quality sort ──────────────────────────────────────────────────────
+# Computes sum of per-category Z-scores: (score - global_mean) / global_std.
+# Restaurants exceptional in rare categories (party, unique) rank higher than
+# those scoring high in universally-easy categories (lingering, relaxed).
+_QUALITY_CTE = """
+WITH _qstats AS (
+    SELECT
+        AVG(_e.family_score)    AS m_fam, STDDEV(_e.family_score)    AS s_fam,
+        AVG(_e.date_score)      AS m_dat, STDDEV(_e.date_score)      AS s_dat,
+        AVG(_e.friends_score)   AS m_fri, STDDEV(_e.friends_score)   AS s_fri,
+        AVG(_e.solo_score)      AS m_sol, STDDEV(_e.solo_score)      AS s_sol,
+        AVG(_e.relaxed_score)   AS m_rel, STDDEV(_e.relaxed_score)   AS s_rel,
+        AVG(_e.party_score)     AS m_par, STDDEV(_e.party_score)     AS s_par,
+        AVG(_e.special_score)   AS m_spe, STDDEV(_e.special_score)   AS s_spe,
+        AVG(_e.foodie_score)    AS m_foo, STDDEV(_e.foodie_score)    AS s_foo,
+        AVG(_e.lingering_score) AS m_lin, STDDEV(_e.lingering_score) AS s_lin,
+        AVG(_e.unique_score)    AS m_uni, STDDEV(_e.unique_score)    AS s_uni,
+        AVG(_e.dresscode_score) AS m_dre, STDDEV(_e.dresscode_score) AS s_dre
+    FROM top_restaurants _tr
+    JOIN gemini_enrichments _e ON _e.place_id = _tr.place_id
+    WHERE _e.family_score IS NOT NULL
+)
+"""
+
+_QUALITY_ZSCORE_EXPR = """(
+    COALESCE((e.family_score    - g.m_fam) / NULLIF(g.s_fam, 0), 0) +
+    COALESCE((e.date_score      - g.m_dat) / NULLIF(g.s_dat, 0), 0) +
+    COALESCE((e.friends_score   - g.m_fri) / NULLIF(g.s_fri, 0), 0) +
+    COALESCE((e.solo_score      - g.m_sol) / NULLIF(g.s_sol, 0), 0) +
+    COALESCE((e.relaxed_score   - g.m_rel) / NULLIF(g.s_rel, 0), 0) +
+    COALESCE((e.party_score     - g.m_par) / NULLIF(g.s_par, 0), 0) +
+    COALESCE((e.special_score   - g.m_spe) / NULLIF(g.s_spe, 0), 0) +
+    COALESCE((e.foodie_score    - g.m_foo) / NULLIF(g.s_foo, 0), 0) +
+    COALESCE((e.lingering_score - g.m_lin) / NULLIF(g.s_lin, 0), 0) +
+    COALESCE((e.unique_score    - g.m_uni) / NULLIF(g.s_uni, 0), 0) +
+    COALESCE((e.dresscode_score - g.m_dre) / NULLIF(g.s_dre, 0), 0)
+)"""
+
 
 def _load_candidates(conn) -> list[dict]:
     """Load all top restaurants with scores, embeddings and open_slots.
@@ -746,6 +784,7 @@ def index():
     view        = request.args.get("view", "").strip()   # "" | "want" | "been"
     type_filter = request.args.get("type_filter", "").strip()
     tag_filter  = request.args.get("tag_filter",  "").strip()
+    sort_key    = request.args.get("sort", "").strip()   # "" | "quality"
 
     ctx = {
         "total": 0, "top_count": 0, "avg_rating": "–", "enriched_count": 0,
@@ -757,6 +796,7 @@ def index():
         "view": view,
         "type_filter": type_filter, "tag_filter": tag_filter,
         "available_types": [], "available_tags": [],
+        "sort_key": sort_key,
         "error": None,
     }
 
@@ -830,7 +870,18 @@ def index():
                 params["tag_filter"] = tag_filter
 
             where = " AND ".join(conditions)
-            order = f"e.{score_col} DESC, t.rating DESC" if score_col else "t.rating DESC, t.rating_count DESC"
+
+            # Quality sort: Z-score across all categories (rare strengths weighted higher)
+            if sort_key == "quality":
+                cte_prefix   = _QUALITY_CTE
+                extra_select = f", {_QUALITY_ZSCORE_EXPR} AS quality_zscore"
+                extra_join   = "CROSS JOIN _qstats g"
+                order        = "quality_zscore DESC, t.rating DESC"
+            else:
+                cte_prefix   = ""
+                extra_select = ""
+                extra_join   = ""
+                order        = f"e.{score_col} DESC, t.rating DESC" if score_col else "t.rating DESC, t.rating_count DESC"
 
             # Count total matching rows for pagination
             cur.execute(f"""
@@ -852,6 +903,7 @@ def index():
             ctx["page"]           = page
 
             cur.execute(f"""
+                {cte_prefix}
                 SELECT
                     t.*,
                     e.family_score, e.date_score,    e.friends_score, e.solo_score,
@@ -864,12 +916,14 @@ def index():
                     res.raw_data->>'type' AS place_type,
                     f.list_type             AS fav_type,
                     f.score                 AS fav_score
+                    {extra_select}
                 FROM top_restaurants t
                 LEFT JOIN gemini_enrichments e  ON e.place_id  = t.place_id
                 LEFT JOIN serpapi_details    sd ON sd.place_id = t.place_id
                 LEFT JOIN restaurants       res ON res.place_id = t.place_id
                 LEFT JOIN user_favorites      f ON f.place_id  = t.place_id
                                                AND f.session_id = %(sid)s
+                {extra_join}
                 WHERE {where}
                 ORDER BY {order}
                 LIMIT %(per_page)s OFFSET %(offset)s
