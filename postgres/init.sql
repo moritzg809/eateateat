@@ -173,6 +173,11 @@ CREATE INDEX idx_serpapi_details_place_id ON serpapi_details (place_id);
 -- View: display-ready restaurants
 --   Only shows restaurants that have passed the full pipeline:
 --   scraped → enriched → completeness check → complete
+--
+--   Quality gate: must score >= 8 in at least 2 enrichment
+--   categories (family, date, friends, solo, relaxed, party,
+--   special, foodie, lingering, unique, dresscode).
+--   Restaurants without enrichment data pass through unchanged.
 -- =============================================================
 
 CREATE VIEW top_restaurants AS
@@ -190,7 +195,32 @@ SELECT
     longitude,
     price_level,
     thumbnail_url
-FROM restaurants
+FROM restaurants r
 WHERE pipeline_status = 'complete'
   AND is_active = TRUE
+  AND (
+    -- No enrichment row yet → pass-through (forward-compat)
+    NOT EXISTS (
+        SELECT 1 FROM gemini_enrichments e
+        WHERE e.place_id = r.place_id AND e.family_score IS NOT NULL
+    )
+    OR (
+        -- Must have at least 2 categories scoring >= 8
+        SELECT (
+            CASE WHEN e.family_score    >= 8 THEN 1 ELSE 0 END +
+            CASE WHEN e.date_score      >= 8 THEN 1 ELSE 0 END +
+            CASE WHEN e.friends_score   >= 8 THEN 1 ELSE 0 END +
+            CASE WHEN e.solo_score      >= 8 THEN 1 ELSE 0 END +
+            CASE WHEN e.relaxed_score   >= 8 THEN 1 ELSE 0 END +
+            CASE WHEN e.party_score     >= 8 THEN 1 ELSE 0 END +
+            CASE WHEN e.special_score   >= 8 THEN 1 ELSE 0 END +
+            CASE WHEN e.foodie_score    >= 8 THEN 1 ELSE 0 END +
+            CASE WHEN e.lingering_score >= 8 THEN 1 ELSE 0 END +
+            CASE WHEN e.unique_score    >= 8 THEN 1 ELSE 0 END +
+            CASE WHEN e.dresscode_score >= 8 THEN 1 ELSE 0 END
+        ) >= 2
+        FROM gemini_enrichments e
+        WHERE e.place_id = r.place_id
+    )
+  )
 ORDER BY rating DESC, rating_count DESC;
