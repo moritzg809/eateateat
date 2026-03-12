@@ -22,11 +22,13 @@ services:
     environment:
       SERPER_API_KEYS: ${SERPER_API_KEYS:-${SERPER_API_KEY}}
       DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+      PHOTOS_DIR: /photos
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./scraper:/app
+      - photos:/photos
     profiles:
       - scrape
 

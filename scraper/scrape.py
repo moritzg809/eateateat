@@ -11,7 +11,11 @@ Usage:
 """
 
 import logging
+import os
 import sys
+import time
+
+import requests
 
 from config import LOCATIONS, SEARCH_TERMS
 from db import (
@@ -33,6 +37,27 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+PHOTOS_DIR = os.getenv("PHOTOS_DIR", "/photos")
+_SESSION = requests.Session()
+
+
+def _download_thumbnail(place_id: str, url: str) -> None:
+    """Download the Serper thumbnail as 0.jpg fallback. Skips if already exists."""
+    if not url:
+        return
+    path = os.path.join(PHOTOS_DIR, place_id, "0.jpg")
+    if os.path.exists(path):
+        return
+    try:
+        resp = _SESSION.get(url, timeout=15)
+        resp.raise_for_status()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as fh:
+            fh.write(resp.content)
+        time.sleep(0.05)
+    except Exception as exc:
+        logger.debug("Thumbnail download failed for %s: %s", place_id, exc)
 
 
 def run(dry_run: bool = False, force: bool = False, init_only: bool = False) -> None:
@@ -111,6 +136,8 @@ def run(dry_run: bool = False, force: bool = False, init_only: bool = False) -> 
                     place_id = place.get("placeId") or place.get("cid")
                     if place_id:
                         set_pipeline_status(conn, place_id, "new")
+                        # Download Serper thumbnail as fallback photo (0.jpg)
+                        _download_thumbnail(place_id, place.get("thumbnailUrl"))
                     stats["restaurants"] += 1
                     new_count += 1
             except Exception as exc:

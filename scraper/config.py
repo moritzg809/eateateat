@@ -33,6 +33,7 @@ SEARCH_TERMS = [
     "Garden restaurant",
     "Sushi restaurant",
     "Fusion restaurant",
+    "Agroturismen restaurant"
 ]
 
 LOCATIONS = [
