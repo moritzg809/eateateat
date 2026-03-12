@@ -107,13 +107,6 @@
         {{ emoji }}&nbsp;{{ label }}
       </a>
       {% endfor %}
-      <!-- Quality sort -->
-      <span class="shrink-0 w-px bg-cream/10 mx-1"></span>
-      <a href="{{ url_for('index', search=search, location=location, sort='quality') }}"
-         class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
-                {{ 'border-amber-400/60 bg-amber-400/10 text-amber-300' if sort_key == 'quality' else 'border-cream/20 text-cream/50 hover:border-amber-400/40 hover:text-amber-300/70' }}">
-        ✦&nbsp;Qualität
-      </a>
       <!-- Favoriten-Filter -->
       <span class="shrink-0 w-px bg-cream/10 mx-1"></span>
       <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, view='want') }}"
@@ -358,19 +351,6 @@
         <!-- Name + rating -->
         <div class="flex items-start justify-between gap-2 mb-2">
           <h3 class="font-serif text-xl font-bold text-ink leading-tight">{{ r.name }}</h3>
-          {% if sort_key == 'quality' and r.quality_zscore is not none %}
-          <div class="shrink-0 flex items-center gap-0.5 bg-ink text-cream rounded-full pl-2.5 pr-2.5 py-0.5"
-               title="Z-Score: Wie weit dieses Restaurant über dem Durchschnitt liegt">
-            <span class="font-mono text-[9px] text-amber-300/60">✦</span>
-            <span class="font-mono text-xs font-bold
-              {% if r.quality_zscore >= 10 %}text-amber-300
-              {% elif r.quality_zscore >= 5 %}text-green-400
-              {% elif r.quality_zscore >= 0 %}text-cream/70
-              {% else %}text-cream/40{% endif %}">
-              {{ "%.1f"|format(r.quality_zscore) }}
-            </span>
-          </div>
-          {% else %}
           <div class="shrink-0 flex items-center gap-1 bg-ink text-cream rounded-full pl-2.5 pr-2.5 py-0.5">
             <span class="font-mono text-xs font-bold
               {% if (r.rating * 20)|round|int >= 94 %}text-green-400
@@ -380,7 +360,6 @@
             </span>
             <span class="font-mono text-[9px] text-cream/35">/100</span>
           </div>
-          {% endif %}
         </div>
 
         <!-- City · type · review count -->
@@ -506,7 +485,6 @@
   {% if location %}{% set base_args = base_args + ['location=' ~ location] %}{% endif %}
   {% if profile_key %}{% set base_args = base_args + ['profile=' ~ profile_key, 'min_score=' ~ min_score] %}{% endif %}
   {% if view %}{% set base_args = base_args + ['view=' ~ view] %}{% endif %}
-  {% if sort_key %}{% set base_args = base_args + ['sort=' ~ sort_key] %}{% endif %}
   {% set base_qs = base_args | join('&') %}
 
   <nav class="flex items-center justify-center gap-2 mt-10 mb-4 flex-wrap">
