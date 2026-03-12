@@ -653,9 +653,12 @@ def similar_page(place_id):
             price_b   = _price_bonus(t_price, cand["price_level"])
             if use_emb and c_emb is not None:
                 sim = 0.55 * emb_cos + 0.20 * score_cos + 0.15 * slots_j + type_b + price_b
+                threshold = 0.75
             else:
+                # No embeddings yet — use V1-style score-only formula with lower threshold
                 sim = 0.60 * score_cos + 0.15 * slots_j + type_b + price_b * 2
-            if sim >= 0.75:
+                threshold = 0.50
+            if sim >= threshold:
                 ranked.append((sim, cand["place_id"]))
 
         ranked.sort(reverse=True)
