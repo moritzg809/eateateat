@@ -36,11 +36,16 @@ logger = logging.getLogger(__name__)
 SERPAPI_URL = "https://serpapi.com/search"
 PHOTOS_DIR  = os.getenv("PHOTOS_DIR", "/photos")
 
+
+class SerpApiQuotaExhausted(Exception):
+    """Raised when SerpAPI returns 429 and all retry attempts are spent."""
+
 # Photo download settings
 _SKIP_PHOTO_TITLES = {"all", "latest", "videos", "street view & 360°",
-                      "street view", "360°", "popular dishes"}
-_PHOTO_ORDER = ["by owner", "exterior", "food & drink",
-                "from visitors", "amenities", "atmosphere", "rooms"]
+                      "360°", "popular dishes", "menu"}
+_PHOTO_ORDER = ["by owner", "exterior", "food & drink", "vibe",
+                "from visitors", "inside", "street view",
+                "amenities", "atmosphere", "rooms"]
 MAX_PHOTOS = 8
 
 _SESSION = requests.Session()
@@ -158,6 +163,11 @@ def fetch_place_details(data_cid: str, retries: int = 5) -> tuple[dict, dict]:
                                    attempt, retries)
                     continue
                 else:
+                    if attempt == retries:
+                        raise SerpApiQuotaExhausted(
+                            f"SerpAPI quota exhausted after {retries} attempts — "
+                            "all keys rate-limited. Stopping."
+                        )
                     wait = 30
                     logger.warning("429 SerpAPI – all keys exhausted, waiting %ss", wait)
                     time.sleep(wait)
@@ -342,6 +352,10 @@ def run(limit=None, min_rating=4.5, min_reviews=100, dry_run=False, force=False)
                 logger.info("         -> ○  (no extensions data)")
 
             time.sleep(0.5)  # gentle pacing
+        except SerpApiQuotaExhausted as exc:
+            logger.error("         -> ✗  %s", exc)
+            logger.error("[DETAILS] SerpAPI quota exhausted — aborting to avoid wasting retries on all remaining restaurants.")
+            break
         except Exception as exc:
             logger.error("         -> ✗  %s", exc)
             stats["errors"] += 1

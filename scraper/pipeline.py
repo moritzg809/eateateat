@@ -6,6 +6,9 @@ Stages (all idempotent — safe to restart at any time):
   2. qualify      Mark below-threshold restaurants as 'disqualified'
   3. enrich       Gemini-enrich 'new' candidates (respects 500/day cap)
   4. completeness Mark 'enriched' restaurants as 'complete' if vibe+summary_de present
+  2.5 gem_qualify Pre-qualify disqualified restaurants (rating ≥ 4.0) via short Gemini call
+                  Only runs when no primary candidates pending AND quota remains
+                  Qualifying candidates appear in the admin review queue
   5. details      Fetch SerpAPI details for 'complete' restaurants
   6. verify       Re-check 'complete' restaurants older than 2 years
 
@@ -26,10 +29,12 @@ import psycopg2.extras
 
 import detail_scrape
 import enrich as enricher
+import gem_qualify
 import scrape
 from config import LOCATIONS, SEARCH_TERMS
 from db import (
     count_today_enrichments,
+    count_pending_new,
     fetch_for_verify,
     get_connection,
     init_pipeline_runs,
@@ -44,7 +49,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ALL_STAGES = ["search", "qualify", "enrich", "completeness", "details", "verify"]
+ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "verify"]
 
 # Quality thresholds (must match config)
 MIN_RATING  = 4.5
@@ -206,6 +211,48 @@ def stage_completeness(conn, dry_run: bool = False):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Stage 2.5: Gem Qualify
+# ─────────────────────────────────────────────────────────────────────────────
+
+def stage_gem_qualify(conn, dry_run: bool = False, limit=None, daily_limit: int = 500):
+    """
+    Pre-qualify disqualified restaurants (rating >= 4.0) via a short Gemini call.
+    Only runs when no primary candidates are pending enrichment AND there is
+    remaining daily Gemini quota (enrich + prequalify share the 500/day cap).
+    Qualifying restaurants appear in the admin review queue.
+    """
+    # Skip if primary enrichment work is still pending
+    pending = count_pending_new(conn, MIN_RATING, MIN_REVIEWS)
+    if pending > 0:
+        logger.info(
+            "[GEM_QUALIFY] %d primary candidate(s) still pending enrichment — skipping.",
+            pending,
+        )
+        return
+
+    # Check remaining daily quota (both stages share the cap)
+    today_enrich     = count_today_enrichments(conn)
+    today_prequalify = gem_qualify.count_today_prequalify(conn)
+    total_today      = today_enrich + today_prequalify
+    remaining        = daily_limit - total_today
+
+    if remaining <= 0:
+        logger.info(
+            "[GEM_QUALIFY] Daily cap reached (%d/%d used) — skipping.",
+            total_today, daily_limit,
+        )
+        return
+
+    effective_limit = limit if (limit is not None and limit <= remaining) else remaining
+    logger.info(
+        "[GEM_QUALIFY] Starting (quota used today: %d/%d, will process up to %d)…",
+        total_today, daily_limit, effective_limit,
+    )
+    gem_qualify.run(limit=effective_limit, dry_run=dry_run)
+    logger.info("[GEM_QUALIFY] Done.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Stage 5: Details
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -347,6 +394,9 @@ def main():
 
     if "completeness" in stages:
         stage_completeness(conn, dry_run=args.dry_run)
+
+    if "gem_qualify" in stages:
+        stage_gem_qualify(conn, dry_run=args.dry_run, limit=args.limit, daily_limit=args.daily_limit)
 
     if "details" in stages:
         stage_details(conn, dry_run=args.dry_run, limit=args.limit)

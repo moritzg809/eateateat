@@ -305,3 +305,22 @@ def count_today_enrichments(conn) -> int:
             "SELECT count(*) FROM gemini_enrichments WHERE enriched_at::date = CURRENT_DATE"
         )
         return cur.fetchone()[0]
+
+
+def count_pending_new(conn, min_rating: float, min_reviews: int) -> int:
+    """Count 'new' restaurants meeting the quality threshold that haven't been enriched yet.
+    Used by stage_gem_qualify to check if primary enrichment work remains."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT count(*)
+            FROM   restaurants r
+            LEFT JOIN gemini_enrichments e ON e.place_id = r.place_id
+            WHERE  r.pipeline_status = 'new'
+              AND  r.rating       >= %s
+              AND  r.rating_count >= %s
+              AND  e.place_id IS NULL
+            """,
+            (min_rating, min_reviews),
+        )
+        return cur.fetchone()[0]

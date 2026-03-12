@@ -38,7 +38,23 @@ client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 PROMPT_TEMPLATE = """\
 Du bist ein ehrlicher Mallorca-Insider mit hohen Ansprüchen — kein Tourismusprospekt.
-Schlage auf Google Maps "{name}" ({address}) nach und lies die echten Reviews.
+
+SCHRITT 1 — Primärquellen lesen:
+{website_section}\
+Schlage dann "{name}" ({address}) auf Google Maps nach und lies die echten Reviews.
+Nutze BEIDE Quellen — die Website verrät Konzept, Geschichte und Anspruch des Restaurants;
+Google Maps zeigt was Gäste wirklich erleben.
+
+SCHRITT 2 — Fakten notieren (intern, nicht ausgeben):
+Bevor du antwortest, halte für dich fest:
+• Küchenchef / Gründer (Name, falls bekannt)
+• Gründungsjahr oder Geschichte (falls erwähnt)
+• Küchenstil / Konzept in einem Wort
+• 2-3 Signaturgerichte mit echtem Namen
+• Was Gäste in Reviews besonders erwähnen (positiv UND negativ)
+• Wer sitzt dort typischerweise (Locals, Touristen, Alter, Anlass)
+• Uhrzeit / Tageszeit wann es voll ist
+Diese Fakten MÜSSEN in deinen Antworten auftauchen — sonst ist die Antwort wertlos.
 
 Bewerte für 11 Reiseprofile (1–10, ganze Zahlen):
 
@@ -57,32 +73,33 @@ Bewerte für 11 Reiseprofile (1–10, ganze Zahlen):
 VERBOTEN — diese Phrasen kennzeichnen schlechtes Schreiben, verwende sie nie:
 "Ein Muss", "sehr zu empfehlen", "lohnenswert", "einladend", "gemütlich",
 "kulinarisches Erlebnis", "gastronomische Reise", "ideal für", "perfekt für",
-"dreht sich alles um",
-"mehr als nur", "ein Ort an dem", "wer ... sucht",
+"dreht sich alles um", "mehr als nur", "ein Ort an dem", "wer ... sucht",
+"helles Tageslicht", "lebhafte Gespräche", "lebhafte Geräuschkulisse",
+"Mischung aus Einheimischen und Touristen", "warme Atmosphäre", "tolle Aussicht",
 Sätze die mit "Es ist...", "Das Restaurant bietet...", "Das Restaurant ist..." beginnen
 
 Wenn du dir nicht sicher bist antworte mit "None" - Das heist aber dass es nicht angezeigt werden wird
 
 Für die drei Textfelder gilt:
 
-summary_de — Genau 2 Sätze, strikt nach dieser Struktur:
-  Satz 1: Konzept + 1-2 harte Fakten (Küchenchef, Stil, Lage, Preisklasse, Besonderheit).
-          Beispiel: "Küchenchef Andreu Genestra kocht hyperregionale Mallorquiner Küche
-          in einer alten Finca bei Capdepera — Degustationsmenü ab 85€, Gemüse aus
-          eigenem Garten."
-  Satz 2: Was passiert dort wirklich — was fällt einem auf, wer sitzt da, was hört/riecht man.
-          Beispiel: "An den Tischen sitzen fast nur Mallorquiner, die Frau vom Chef
-          erklärt jeden Gang auf Katalanisch, das Brot kommt warm aus dem Holzofen."
+summary_de — 2-4 Sätze, keine starre Struktur, aber konkret und spezifisch:
+  Beginne mit dem was dieses Restaurant einzigartig macht — Küchenchef, Gründungsgeschichte, Konzept, Lage.
+  Wenn Website oder Reviews einen Namen, ein Gründungsjahr, eine Geschichte nennen — nutze sie.
+  Danach: was passiert dort wirklich, wer sitzt da, was fällt auf.
+  Jeder Satz muss nur für dieses Restaurant wahr sein — kein Satz darf für 50 andere Restaurants genauso gelten.
+  Beispiel: "Küchenchef Andreu Genestra kocht hyperregionale Mallorquiner Küche in einer alten Finca bei
+  Capdepera — Degustationsmenü ab 85€, Gemüse aus eigenem Garten. An den Tischen sitzen fast nur
+  Mallorquiner, die Frau vom Chef erklärt jeden Gang auf Katalanisch, das Brot kommt warm aus dem Holzofen.
+  Reservierung Monate im Voraus, trotzdem fühlt sich kein Tisch gehetzt an."
 
-must_order — 1-2 konkrete Gerichte/Getränke mit vollem Namen, keine Oberbegriffe.
-  Beispiel GUT: "Sobrassada amb mel (auf warmem Pan de cristal), dazu ein Glas
-  José L. Ferrer Blanc de Blancs"
+must_order — 1-2 konkrete Gerichte/Getränke mit vollem Namen aus den Reviews oder der Karte, keine Oberbegriffe.
+  Beispiel GUT: "Sobrassada amb mel (auf warmem Pan de cristal), dazu ein Glas José L. Ferrer Blanc de Blancs"
   Beispiel SCHLECHT: "Die Tapas" / "Die Hausspezialitäten" / "das Fleisch"
 
-vibe — 1 Satz: Licht + Lautstärke + wer sitzt da + Uhrzeit. Keine Wertungen.
-  Beispiel GUT: "Enge Holztische, Neonröhren, fast nur Einheimische, voll ab 21:30,
-  man teilt sich die Bank mit Fremden."
-  Beispiel SCHLECHT: "Entspannte Atmosphäre mit warmem Licht."
+vibe — Beschreibe in 1-3 Sätzen wie es sich dort anfühlt. Kein vorgegebenes Schema — schreib was einen wirklich
+  trifft wenn man reinkommt: das Licht, die Geräusche, wer da sitzt, zu welcher Uhrzeit, welche Energie im Raum ist.
+  Keine Wertungen ("schön", "toll", "gemütlich"). Keine generischen Beobachtungen.
+  Was du schreibst muss für genau dieses Restaurant stimmen — und sich von allen anderen unterscheiden.
 
 Antworte AUSSCHLIESSLICH mit diesem JSON (kein Markdown, kein Text davor/danach):
 {{
@@ -99,7 +116,7 @@ Antworte AUSSCHLIESSLICH mit diesem JSON (kein Markdown, kein Text davor/danach)
   "dresscode":  <int>,
   "summary_de": "<2 Sätze, konkret, nur für dieses Restaurant wahr>",
   "must_order": "<1-2 echte Gerichte/Getränke mit Namen>",
-  "vibe":       "<1 Satz: Licht, Lautstärke, Gäste, Uhrzeit>"
+  "vibe":       "<1 Satz: Licht, Lautstärke, konkrete Gäste, Uhrzeit>"
 }}"""
 
 # ---------------------------------------------------------------------------
@@ -130,12 +147,26 @@ def _extract_json(text: str | None) -> dict:
     return json.loads(text)
 
 
-def call_gemini(name: str, address: str, lat=None, lng=None, retries: int = 3) -> tuple[dict, dict]:
-    prompt = PROMPT_TEMPLATE.format(name=name, address=address or "Mallorca, Spanien")
+def call_gemini(name: str, address: str, lat=None, lng=None, website: str | None = None, retries: int = 3) -> tuple[dict, dict]:
+    if website:
+        website_section = f"Lies zuerst die offizielle Website: {website}\n"
+    else:
+        website_section = ""
+
+    prompt = PROMPT_TEMPLATE.format(
+        name=name,
+        address=address or "Mallorca, Spanien",
+        website_section=website_section,
+    )
+
+    # Build tools — always Google Maps, add URL context if website available
+    tools = [types.Tool(google_maps=types.GoogleMaps())]
+    if website:
+        tools.append(types.Tool(url_context=types.UrlContext()))
 
     # Build config — lat/lng is optional
     config_kwargs: dict = {
-        "tools":       [types.Tool(google_maps=types.GoogleMaps())],
+        "tools":       tools,
         "temperature": 0.3,
     }
     if lat is not None and lng is not None:
@@ -213,7 +244,7 @@ def fetch_pending(
         where_cache = "AND e.place_id IS NULL"
 
     sql = f"""
-        SELECT r.id, r.place_id, r.name, r.address, r.latitude, r.longitude
+        SELECT r.id, r.place_id, r.name, r.address, r.latitude, r.longitude, r.website
         FROM   restaurants r
         {join}
         WHERE  r.rating       >= %(min_rating)s
@@ -317,16 +348,16 @@ def run(limit=None, min_rating=4.5, min_reviews=100, dry_run=False, force=False,
 
     stats = {"ok": 0, "errors": 0}
 
-    for i, (rid, place_id, name, address, lat, lng) in enumerate(rows, 1):
+    for i, (rid, place_id, name, address, lat, lng, website) in enumerate(rows, 1):
         prefix = f"[{i:>3}/{total}]"
 
         if dry_run:
-            logger.info("%s WOULD ENRICH  %s", prefix, name)
+            logger.info("%s WOULD ENRICH  %s  %s", prefix, name, f"[{website}]" if website else "")
             continue
 
-        logger.info("%s %s", prefix, name)
+        logger.info("%s %s  %s", prefix, name, f"🌐 {website}" if website else "")
         try:
-            data, raw_response = call_gemini(name, address, lat, lng)
+            data, raw_response = call_gemini(name, address, lat, lng, website)
             save_enrichment(conn, place_id, data, raw_response)
             set_pipeline_status(conn, place_id, "enriched")
             stats["ok"] += 1
@@ -334,6 +365,9 @@ def run(limit=None, min_rating=4.5, min_reviews=100, dry_run=False, force=False,
             time.sleep(0.3)  # gentle pacing
         except ModelUncertainError as exc:
             logger.warning("         -> ⚠  Modell unsicher, übersprungen: %s", exc)
+            # Save a null row so this restaurant no longer appears as "pending"
+            # and doesn't permanently block gem_qualify. Re-run with --force to retry.
+            save_enrichment(conn, place_id, {}, {"model": MODEL, "text": None, "uncertain": True})
             stats["skipped"] = stats.get("skipped", 0) + 1
         except Exception as exc:
             logger.error("         -> ✗  %s", exc)

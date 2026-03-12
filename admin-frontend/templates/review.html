@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MallorcaEat · Geheimtipp-Review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+            alert: '#b91c1c',
+            warn:  '#d97706',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #0f0e0d; color: #f5f0e8; }
+    .table-row:hover { background: rgba(245,240,232,.04); }
+    .score-bar { transition: width .4s ease; }
+    .flash-success { background: rgba(61,90,71,.25); border-color: rgba(61,90,71,.5); color: #86efac; }
+    .flash-info    { background: rgba(217,119,6,.15); border-color: rgba(217,119,6,.4); color: #fcd34d; }
+    .flash-error   { background: rgba(185,28,28,.15); border-color: rgba(185,28,28,.4); color: #fca5a5; }
+    input[type=checkbox] { accent-color: #c4622d; width: 1rem; height: 1rem; cursor: pointer; }
+    input[type=number] {
+      background: rgba(245,240,232,.06);
+      border: 1px solid rgba(245,240,232,.15);
+      border-radius: .5rem;
+      color: #f5f0e8;
+      padding: .25rem .5rem;
+      font-family: 'DM Mono', monospace;
+      font-size: .75rem;
+      width: 4rem;
+      text-align: center;
+    }
+    input[type=number]:focus { outline: 2px solid rgba(196,98,45,.6); border-color: transparent; }
+  </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<!-- ═══════════════════════ HEADER ═══════════════════════ -->
+<header class="border-b border-cream/10">
+  <div class="max-w-6xl mx-auto px-6 py-8">
+    <div class="flex items-end justify-between flex-wrap gap-4">
+      <div>
+        <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest mb-2">
+          Admin · <a href="/" class="hover:text-cream/50 transition-colors">Pipeline Status</a>
+          <span class="text-cream/15 mx-1">›</span>
+          Geheimtipp-Review
+        </div>
+        <h1 class="font-serif text-4xl font-bold text-cream">
+          Mallorca<em class="text-terra">Eat</em>
+          <span class="text-cream/20 text-2xl ml-3">/ Geheimtipp-Review</span>
+        </h1>
+      </div>
+      <div class="text-right">
+        <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest">Kandidaten gesamt</div>
+        <div class="font-serif text-3xl font-bold text-terra mt-1">{{ total }}</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+{% if error %}
+<div class="max-w-6xl mx-auto px-6 mt-8">
+  <div class="border border-red-800 bg-red-950 rounded-xl p-6">
+    <h2 class="font-mono text-sm text-red-400 uppercase tracking-wide mb-2">Fehler</h2>
+    <pre class="font-mono text-xs text-red-300">{{ error }}</pre>
+  </div>
+</div>
+{% else %}
+
+<div class="max-w-6xl mx-auto px-6 py-8 space-y-8">
+
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="space-y-2">
+      {% for category, msg in messages %}
+      <div class="flash-{{ category }} border rounded-xl px-5 py-3 font-sans text-sm">{{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- ═══ ANLEITUNG ════════════════════════════════════════════ -->
+  <section class="border border-cream/10 rounded-2xl bg-cream/[.02] p-5">
+    <h2 class="font-mono text-[10px] text-cream/30 uppercase tracking-widest mb-3">So funktioniert's</h2>
+    <ol class="space-y-1.5 font-sans text-sm text-cream/60 list-decimal list-inside">
+      <li>Schau dir die <strong class="text-cream/80">Top-Einträge</strong> an — klick auf Maps & Website um sie zu beurteilen.</li>
+      <li>Wähle einen <strong class="text-cream/80">Batch-Schwellenwert</strong> (z.B. Score ≥ 16) und genehmige/lehne alle auf einmal ab.</li>
+      <li>Nutze die <strong class="text-cream/80">Checkboxen</strong> für einzelne Entscheidungen im Grenzbereich.</li>
+      <li>Genehmigte Restaurants werden auf <code class="font-mono text-terra text-xs">pipeline_status = 'new'</code> gesetzt und beim nächsten Enrichment-Lauf vollständig verarbeitet.</li>
+    </ol>
+  </section>
+
+  <!-- ═══ SCORE-VERTEILUNG + BATCH-AKTIONEN ═══════════════════ -->
+  <section>
+    <h2 class="font-mono text-[10px] text-cream/30 uppercase tracking-widest mb-4">Score-Verteilung & Batch-Aktionen</h2>
+
+    <div class="grid sm:grid-cols-2 gap-5">
+
+      <!-- Score distribution -->
+      <div class="border border-cream/10 rounded-xl p-5 bg-cream/[.03]">
+        <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest mb-3">Kombinierter Score (unique + foodie)</div>
+        {% if score_distribution %}
+        <div class="space-y-1.5">
+          {% for row in score_distribution %}
+          {% set pct = [(row.n / total * 100)|round|int, 100]|min if total > 0 else 0 %}
+          <div class="flex items-center gap-3">
+            <span class="font-mono text-xs text-cream/50 w-5 text-right">{{ row.combined }}</span>
+            <div class="flex-1 h-1.5 bg-cream/10 rounded-full overflow-hidden">
+              <div class="score-bar h-full rounded-full
+                {% if row.combined >= 18 %}bg-green-500{% elif row.combined >= 16 %}bg-sage{% elif row.combined >= 14 %}bg-terra{% else %}bg-cream/20{% endif %}"
+                style="width: {{ pct }}%"></div>
+            </div>
+            <span class="font-mono text-[10px] text-cream/35 w-6 text-right">{{ row.n }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="font-sans text-sm text-cream/30 italic">Keine Daten.</p>
+        {% endif %}
+      </div>
+
+      <!-- Batch actions -->
+      <div class="border border-cream/10 rounded-xl p-5 bg-cream/[.03] space-y-4">
+        <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest mb-3">Batch-Aktionen (alle Seiten)</div>
+
+        <!-- Batch approve -->
+        <form method="POST" action="/review/approve" class="flex items-center gap-3 flex-wrap">
+          <input type="hidden" name="page" value="{{ page }}">
+          <label class="font-sans text-sm text-cream/60">Alle genehmigen mit Score ≥</label>
+          <input type="number" name="min_score" min="10" max="20" value="16" required>
+          <button type="submit"
+            onclick="return confirm('Alle Kandidaten mit kombiniertem Score ≥ diesem Wert zur Anreicherung freigeben?')"
+            class="font-mono text-[11px] px-3 py-1.5 rounded-lg bg-sage/30 border border-sage/50 text-green-300
+                   hover:bg-sage/50 transition-colors cursor-pointer">
+            ✓ Genehmigen
+          </button>
+        </form>
+
+        <div class="border-t border-cream/10"></div>
+
+        <!-- Batch reject -->
+        <form method="POST" action="/review/reject" class="flex items-center gap-3 flex-wrap">
+          <input type="hidden" name="page" value="{{ page }}">
+          <label class="font-sans text-sm text-cream/60">Alle ablehnen mit Score ≤</label>
+          <input type="number" name="max_score" min="10" max="20" value="12" required>
+          <button type="submit"
+            onclick="return confirm('Alle Kandidaten mit kombiniertem Score ≤ diesem Wert ablehnen?')"
+            class="font-mono text-[11px] px-3 py-1.5 rounded-lg bg-red-950/50 border border-red-800/40 text-red-300
+                   hover:bg-red-900/40 transition-colors cursor-pointer">
+            ✗ Ablehnen
+          </button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ KANDIDATEN-TABELLE ═══════════════════════════════════ -->
+  {% if candidates %}
+  <section>
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+      <h2 class="font-mono text-[10px] text-cream/30 uppercase tracking-widest">
+        Kandidaten · Seite {{ page }}/{{ total_pages }}
+        <span class="text-cream/20 ml-2">({{ candidates|length }} auf dieser Seite)</span>
+      </h2>
+      <!-- Select-all / deselect-all helpers -->
+      <div class="flex gap-3">
+        <button onclick="setAll(true)"
+          class="font-mono text-[10px] text-cream/40 hover:text-cream/70 transition-colors cursor-pointer">
+          Alle auswählen
+        </button>
+        <span class="text-cream/20">·</span>
+        <button onclick="setAll(false)"
+          class="font-mono text-[10px] text-cream/40 hover:text-cream/70 transition-colors cursor-pointer">
+          Alle abwählen
+        </button>
+      </div>
+    </div>
+
+    <form id="bulk-form" method="POST" action="/review/approve">
+      <input type="hidden" name="page" value="{{ page }}">
+
+      <!-- Table -->
+      <div class="border border-cream/10 rounded-2xl overflow-hidden">
+
+        <!-- Header -->
+        <div class="grid grid-cols-[auto_1fr_auto_auto_auto_auto] items-center
+                    gap-x-4 px-4 py-2.5 border-b border-cream/10
+                    font-mono text-[10px] text-cream/25 uppercase tracking-widest">
+          <span></span>
+          <span>Restaurant</span>
+          <span class="text-right">Bewertung</span>
+          <span class="text-center">Unique</span>
+          <span class="text-center">Foodie</span>
+          <span class="text-right">Aktion</span>
+        </div>
+
+        <!-- Rows -->
+        {% for c in candidates %}
+        <div class="table-row grid grid-cols-[auto_1fr_auto_auto_auto_auto] items-center
+                    gap-x-4 px-4 py-3.5 border-b border-cream/[.06] last:border-0">
+
+          <!-- Checkbox -->
+          <input type="checkbox" name="place_id" value="{{ c.place_id }}" class="shrink-0">
+
+          <!-- Name + address + links -->
+          <div class="min-w-0">
+            <div class="font-sans text-sm font-medium text-cream/85 truncate">{{ c.name }}</div>
+            <div class="font-mono text-[10px] text-cream/30 truncate mt-0.5">{{ c.address }}</div>
+            <div class="flex items-center gap-3 mt-1.5">
+              <a href="https://www.google.com/maps/place/?q=place_id:{{ c.place_id }}"
+                 target="_blank" rel="noopener"
+                 class="font-mono text-[10px] text-terra/70 hover:text-terra transition-colors">
+                ⬡ Maps →
+              </a>
+              {% if c.website %}
+              <a href="{{ c.website }}" target="_blank" rel="noopener"
+                 class="font-mono text-[10px] text-cream/35 hover:text-cream/60 transition-colors truncate max-w-[200px]">
+                ↗ Website →
+              </a>
+              {% else %}
+              <span class="font-mono text-[10px] text-cream/15 italic">kein Website</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Rating -->
+          <div class="text-right shrink-0">
+            <div class="font-mono text-sm text-cream/70">{{ "%.1f"|format(c.rating or 0) }}★</div>
+            <div class="font-mono text-[10px] text-cream/30">{{ c.rating_count or 0 }} Reviews</div>
+          </div>
+
+          <!-- Unique score -->
+          <div class="text-center shrink-0">
+            <div class="font-serif text-xl font-bold
+              {% if c.unique_score >= 9 %}text-green-400{% elif c.unique_score >= 7 %}text-terra{% else %}text-cream/40{% endif %}">
+              {{ c.unique_score }}
+            </div>
+            <div class="font-mono text-[9px] text-cream/20 uppercase">unique</div>
+          </div>
+
+          <!-- Foodie score -->
+          <div class="text-center shrink-0">
+            <div class="font-serif text-xl font-bold
+              {% if c.foodie_score >= 9 %}text-green-400{% elif c.foodie_score >= 7 %}text-terra{% else %}text-cream/40{% endif %}">
+              {{ c.foodie_score }}
+            </div>
+            <div class="font-mono text-[9px] text-cream/20 uppercase">foodie</div>
+          </div>
+
+          <!-- Individual actions -->
+          <div class="flex flex-col gap-1.5 shrink-0 items-end">
+            <!-- Approve -->
+            <form method="POST" action="/review/approve">
+              <input type="hidden" name="place_id" value="{{ c.place_id }}">
+              <input type="hidden" name="page" value="{{ page }}">
+              <button type="submit"
+                class="font-mono text-[10px] px-2.5 py-1 rounded-md
+                       bg-sage/20 border border-sage/30 text-green-400/80
+                       hover:bg-sage/40 transition-colors cursor-pointer w-full">
+                ✓ Freigeben
+              </button>
+            </form>
+            <!-- Reject -->
+            <form method="POST" action="/review/reject">
+              <input type="hidden" name="place_id" value="{{ c.place_id }}">
+              <input type="hidden" name="page" value="{{ page }}">
+              <button type="submit"
+                class="font-mono text-[10px] px-2.5 py-1 rounded-md
+                       bg-red-950/40 border border-red-900/30 text-red-400/70
+                       hover:bg-red-900/40 transition-colors cursor-pointer w-full">
+                ✗ Ablehnen
+              </button>
+            </form>
+          </div>
+
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Bulk action bar -->
+      <div class="mt-4 flex items-center gap-4 flex-wrap">
+        <span class="font-mono text-[10px] text-cream/25 uppercase tracking-widest">Ausgewählte:</span>
+        <button type="submit" formaction="/review/approve"
+          class="font-mono text-[11px] px-4 py-2 rounded-lg
+                 bg-sage/25 border border-sage/40 text-green-300
+                 hover:bg-sage/45 transition-colors cursor-pointer">
+          ✓ Ausgewählte freigeben
+        </button>
+        <button type="submit" formaction="/review/reject"
+          class="font-mono text-[11px] px-4 py-2 rounded-lg
+                 bg-red-950/50 border border-red-800/40 text-red-300
+                 hover:bg-red-900/40 transition-colors cursor-pointer">
+          ✗ Ausgewählte ablehnen
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ═══ PAGINATION ════════════════════════════════════════════ -->
+  {% if total_pages > 1 %}
+  <nav class="flex items-center justify-center gap-3">
+    {% if page > 1 %}
+    <a href="/review?page={{ page - 1 }}"
+       class="font-mono text-[11px] px-4 py-2 rounded-lg border border-cream/15 text-cream/50
+              hover:border-cream/30 hover:text-cream/70 transition-colors">
+      ← Zurück
+    </a>
+    {% endif %}
+
+    <span class="font-mono text-[11px] text-cream/30">
+      {{ page }} / {{ total_pages }}
+    </span>
+
+    {% if page < total_pages %}
+    <a href="/review?page={{ page + 1 }}"
+       class="font-mono text-[11px] px-4 py-2 rounded-lg border border-cream/15 text-cream/50
+              hover:border-cream/30 hover:text-cream/70 transition-colors">
+      Weiter →
+    </a>
+    {% endif %}
+  </nav>
+  {% endif %}
+
+  {% else %}
+  <!-- Empty state -->
+  <section class="border border-cream/10 rounded-2xl p-12 text-center">
+    <div class="font-serif text-5xl mb-4 text-cream/20">⬥</div>
+    <h2 class="font-serif text-2xl text-cream/50 mb-2">Keine Kandidaten ausstehend</h2>
+    <p class="font-sans text-sm text-cream/30">
+      Alle qualifizierten Restaurants wurden bereits bearbeitet,
+      oder der Gem-Qualify-Lauf hat noch keine Ergebnisse geliefert.
+    </p>
+    <a href="/" class="inline-block mt-6 font-mono text-[11px] text-terra/70 hover:text-terra transition-colors">
+      ← Zurück zum Dashboard
+    </a>
+  </section>
+  {% endif %}
+
+</div>
+{% endif %}
+
+<!-- Footer -->
+<footer class="border-t border-cream/10 py-5 mt-10">
+  <div class="max-w-6xl mx-auto px-6 flex items-center justify-between flex-wrap gap-3">
+    <a href="/" class="font-mono text-[10px] text-cream/20 hover:text-cream/40 transition-colors">
+      ← MallorcaEat Admin · Dashboard
+    </a>
+    <span class="font-mono text-[10px] text-cream/15">
+      {% if now %}{{ now.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}
+    </span>
+  </div>
+</footer>
+
+<script>
+  function setAll(checked) {
+    document.querySelectorAll('#bulk-form input[type=checkbox]').forEach(cb => cb.checked = checked);
+  }
+</script>
+
+</body>
+</html>

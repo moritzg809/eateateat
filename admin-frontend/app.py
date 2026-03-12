@@ -8,16 +8,23 @@ from datetime import datetime, timezone
 
 import psycopg2
 import psycopg2.extras
-from flask import Flask, render_template
+from flask import Flask, flash, redirect, render_template, request, url_for
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "mallorcaeat-admin-dev-secret")
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+
+REVIEW_PAGE_SIZE = 50
 
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dashboard index
+# ─────────────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -75,6 +82,42 @@ def index():
             )
             row = cur.fetchone()
             ctx["details_coverage"] = dict(row) if row else {}
+
+            # ── Gem qualify stats ───────────────────────────────────────────
+            try:
+                cur.execute(
+                    """
+                    SELECT
+                        count(*)                                                        AS total_evaluated,
+                        count(*) FILTER (WHERE qualified = TRUE  AND rejected = FALSE)  AS pending_review,
+                        count(*) FILTER (WHERE qualified = TRUE  AND rejected = TRUE)   AS rejected_count,
+                        count(*) FILTER (WHERE qualified = FALSE)                       AS not_qualified
+                    FROM gemini_prequalify
+                    """
+                )
+                gq = cur.fetchone()
+                ctx["gem_qualify"] = dict(gq) if gq else {}
+
+                # Actionable = qualified, not rejected, still disqualified in pipeline
+                cur.execute(
+                    """
+                    SELECT count(*)
+                    FROM   gemini_prequalify p
+                    JOIN   restaurants r ON r.place_id = p.place_id
+                    WHERE  p.qualified = TRUE AND p.rejected = FALSE
+                      AND  r.pipeline_status = 'disqualified'
+                    """
+                )
+                ctx["gem_qualify"]["actionable"] = cur.fetchone()["count"]
+
+                # Today's prequalify calls (for shared quota display)
+                cur.execute(
+                    "SELECT count(*) FROM gemini_prequalify WHERE evaluated_at::date = CURRENT_DATE"
+                )
+                ctx["today_prequalify"] = cur.fetchone()["count"]
+            except Exception:
+                ctx["gem_qualify"] = {}
+                ctx["today_prequalify"] = 0
 
             # ── Pipeline runs table ─────────────────────────────────────────
             cur.execute(
@@ -145,6 +188,180 @@ def index():
 
     ctx["now"] = datetime.now(timezone.utc)
     return render_template("index.html", **ctx)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gem-qualify review queue
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/review")
+def review():
+    ctx = {}
+    page = request.args.get("page", 1, type=int)
+    offset = (page - 1) * REVIEW_PAGE_SIZE
+
+    try:
+        conn = get_db()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+
+            # Total actionable candidates
+            cur.execute(
+                """
+                SELECT count(*)
+                FROM   gemini_prequalify p
+                JOIN   restaurants r ON r.place_id = p.place_id
+                WHERE  p.qualified = TRUE AND p.rejected = FALSE
+                  AND  r.pipeline_status = 'disqualified'
+                """
+            )
+            ctx["total"] = cur.fetchone()["count"]
+            ctx["page"] = page
+            ctx["page_size"] = REVIEW_PAGE_SIZE
+            ctx["total_pages"] = max(1, (ctx["total"] + REVIEW_PAGE_SIZE - 1) // REVIEW_PAGE_SIZE)
+
+            # Score distribution for the batch-threshold helper
+            cur.execute(
+                """
+                SELECT
+                    (p.unique_score + p.foodie_score) AS combined,
+                    count(*) AS n
+                FROM   gemini_prequalify p
+                JOIN   restaurants r ON r.place_id = p.place_id
+                WHERE  p.qualified = TRUE AND p.rejected = FALSE
+                  AND  r.pipeline_status = 'disqualified'
+                GROUP  BY combined
+                ORDER  BY combined DESC
+                """
+            )
+            ctx["score_distribution"] = cur.fetchall()
+
+            # Candidates for this page, sorted best-first
+            cur.execute(
+                """
+                SELECT
+                    r.place_id,
+                    r.name,
+                    r.address,
+                    r.rating,
+                    r.rating_count,
+                    r.website,
+                    r.latitude,
+                    r.longitude,
+                    p.unique_score,
+                    p.foodie_score,
+                    (p.unique_score + p.foodie_score) AS combined_score,
+                    p.evaluated_at
+                FROM   gemini_prequalify p
+                JOIN   restaurants r ON r.place_id = p.place_id
+                WHERE  p.qualified = TRUE AND p.rejected = FALSE
+                  AND  r.pipeline_status = 'disqualified'
+                ORDER  BY (p.unique_score + p.foodie_score) DESC,
+                           p.foodie_score DESC
+                LIMIT  %s OFFSET %s
+                """,
+                (REVIEW_PAGE_SIZE, offset),
+            )
+            ctx["candidates"] = cur.fetchall()
+
+        conn.close()
+    except Exception as exc:
+        ctx["error"] = str(exc)
+
+    ctx["now"] = datetime.now(timezone.utc)
+    return render_template("review.html", **ctx)
+
+
+@app.route("/review/approve", methods=["POST"])
+def review_approve():
+    min_score = request.form.get("min_score", type=int)
+    place_ids = request.form.getlist("place_id")
+    page      = request.form.get("page", 1)
+
+    conn = get_db()
+    approved = 0
+    try:
+        with conn.cursor() as cur:
+            if min_score is not None:
+                # Batch-approve all pending candidates with combined score >= threshold
+                cur.execute(
+                    """
+                    UPDATE restaurants r
+                    SET    pipeline_status = 'new'
+                    FROM   gemini_prequalify p
+                    WHERE  r.place_id = p.place_id
+                      AND  r.pipeline_status  = 'disqualified'
+                      AND  p.qualified        = TRUE
+                      AND  p.rejected         = FALSE
+                      AND  (p.unique_score + p.foodie_score) >= %s
+                    """,
+                    (min_score,),
+                )
+                approved = cur.rowcount
+            elif place_ids:
+                cur.execute(
+                    """
+                    UPDATE restaurants
+                    SET    pipeline_status = 'new'
+                    WHERE  place_id = ANY(%s)
+                      AND  pipeline_status = 'disqualified'
+                    """,
+                    (place_ids,),
+                )
+                approved = cur.rowcount
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        flash(f"Fehler beim Genehmigen: {exc}", "error")
+    finally:
+        conn.close()
+
+    if approved:
+        flash(f"✓ {approved} Restaurant(s) zur Anreicherung freigegeben.", "success")
+    return redirect(url_for("review", page=page))
+
+
+@app.route("/review/reject", methods=["POST"])
+def review_reject():
+    max_score = request.form.get("max_score", type=int)
+    place_ids = request.form.getlist("place_id")
+    page      = request.form.get("page", 1)
+
+    conn = get_db()
+    rejected = 0
+    try:
+        with conn.cursor() as cur:
+            if max_score is not None:
+                # Batch-reject all pending candidates with combined score <= threshold
+                cur.execute(
+                    """
+                    UPDATE gemini_prequalify p
+                    SET    rejected = TRUE
+                    FROM   restaurants r
+                    WHERE  p.place_id = r.place_id
+                      AND  r.pipeline_status = 'disqualified'
+                      AND  p.qualified       = TRUE
+                      AND  p.rejected        = FALSE
+                      AND  (p.unique_score + p.foodie_score) <= %s
+                    """,
+                    (max_score,),
+                )
+                rejected = cur.rowcount
+            elif place_ids:
+                cur.execute(
+                    "UPDATE gemini_prequalify SET rejected = TRUE WHERE place_id = ANY(%s)",
+                    (place_ids,),
+                )
+                rejected = cur.rowcount
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        flash(f"Fehler beim Ablehnen: {exc}", "error")
+    finally:
+        conn.close()
+
+    if rejected:
+        flash(f"✗ {rejected} Restaurant(s) abgelehnt.", "info")
+    return redirect(url_for("review", page=page))
 
 
 if __name__ == "__main__":

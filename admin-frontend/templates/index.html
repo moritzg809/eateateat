@@ -185,6 +185,61 @@
     </section>
   </div>
 
+  <!-- ═══ GEM QUALIFY ══════════════════════════════════════════ -->
+  {% if gem_qualify %}
+  <section>
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="font-mono text-[10px] text-cream/30 uppercase tracking-widest">Geheimtipp-Pool · Gem Qualify</h2>
+      {% if gem_qualify.actionable > 0 %}
+      <a href="/review"
+         class="inline-flex items-center gap-1.5 font-mono text-[11px] px-3 py-1.5 rounded-lg
+                bg-terra/20 border border-terra/40 text-terra hover:bg-terra/30 transition-colors">
+        <span>⬥</span>
+        {{ gem_qualify.actionable }} zur Überprüfung
+        <span class="opacity-60">→</span>
+      </a>
+      {% endif %}
+    </div>
+
+    <div class="grid sm:grid-cols-4 gap-4">
+
+      <!-- Total evaluated -->
+      <div class="border border-cream/10 rounded-xl p-4 bg-cream/[.03] text-center">
+        <div class="font-serif text-3xl font-bold text-cream/70">{{ gem_qualify.total_evaluated or 0 }}</div>
+        <div class="font-mono text-[10px] text-cream/30 uppercase tracking-widest mt-1">Bewertet</div>
+        <div class="font-sans text-[10px] text-cream/20 mt-0.5">Gemini pre-qualify</div>
+      </div>
+
+      <!-- Pending review / actionable -->
+      <div class="border rounded-xl p-4 text-center
+                  {% if gem_qualify.actionable > 0 %}border-terra/40 bg-terra/10{% else %}border-cream/10 bg-cream/[.03]{% endif %}">
+        <div class="font-serif text-3xl font-bold {% if gem_qualify.actionable > 0 %}text-terra{% else %}text-cream/30{% endif %}">
+          {{ gem_qualify.actionable or 0 }}
+        </div>
+        <div class="font-mono text-[10px] {% if gem_qualify.actionable > 0 %}text-terra/60{% else %}text-cream/30{% endif %} uppercase tracking-widest mt-1">
+          Ausstehend
+        </div>
+        <div class="font-sans text-[10px] text-cream/20 mt-0.5">Warten auf Freigabe</div>
+      </div>
+
+      <!-- Not qualified -->
+      <div class="border border-cream/10 rounded-xl p-4 bg-cream/[.03] text-center">
+        <div class="font-serif text-3xl font-bold text-cream/30">{{ gem_qualify.not_qualified or 0 }}</div>
+        <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest mt-1">Nicht qualifiziert</div>
+        <div class="font-sans text-[10px] text-cream/20 mt-0.5">Score ≤ 8</div>
+      </div>
+
+      <!-- Quota used today -->
+      <div class="border border-cream/10 rounded-xl p-4 bg-cream/[.03] text-center">
+        <div class="font-serif text-3xl font-bold text-cream/50">{{ today_prequalify or 0 }}</div>
+        <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest mt-1">Heute</div>
+        <div class="font-sans text-[10px] text-cream/20 mt-0.5">Pre-qualify calls</div>
+      </div>
+
+    </div>
+  </section>
+  {% endif %}
+
   <!-- ═══ SEARCH QUERIES TABLE ══════════════════════════════════ -->
   <section>
     <div class="flex items-center gap-4 mb-5">
@@ -256,6 +311,7 @@
         ("Vollständiger Durchlauf",       "docker compose --profile pipeline run --rm pipeline"),
         ("Nur Suche (neue Restaurants)",  "docker compose --profile pipeline run --rm pipeline --stages search"),
         ("Nur Enrichment (Gemini)",       "docker compose --profile pipeline run --rm pipeline --stages qualify,enrich,completeness"),
+        ("Geheimtipp-Pool bewerten",      "docker compose --profile pipeline run --rm pipeline --stages gem_qualify"),
         ("Nur Details (SerpAPI)",         "docker compose --profile pipeline run --rm pipeline --stages details"),
         ("Re-Verifikation (alte Eintr.)", "docker compose --profile pipeline run --rm pipeline --stages verify"),
         ("Force alle Suchen neu",        "docker compose --profile pipeline run --rm pipeline --stages search --force-search"),
