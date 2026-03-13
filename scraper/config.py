@@ -33,7 +33,8 @@ SEARCH_TERMS = [
     "Garden restaurant",
     "Sushi restaurant",
     "Fusion restaurant",
-    "Agroturismen restaurant"
+    "Agroturismen restaurant",
+    "Meerview restaurant",
 ]
 
 LOCATIONS = [
@@ -75,7 +76,10 @@ LOCATIONS = [
     "Cala Major Mallorca",
     "Pere Garau Mallorca",
     "Son Armadams Mallorca",
-    "Son Vida Mallorca"
+    "Son Vida Mallorca",
+    "Selva, Mallorca",
+    "Consell, Mallorca",
+    "Biniagual, Mallorca",
 
 ]
 

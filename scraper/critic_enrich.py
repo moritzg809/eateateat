@@ -70,8 +70,17 @@ PREIS — intern:
 • avg_price_pp: Durchschnittlicher Preis pro Person in Euro als ganze Zahl (nur Essen, ohne Getränke)
 
 KÜCHE — intern, für künftige Filter:
-• cuisine_type: Küchenbezeichnung als kurzer Text (z.B. "Mallorquinisch", "Modern Mediterranean", "Tapas")
+• cuisine_type: Küchenbezeichnung auf DEUTSCH, max. 3 Wörter (z.B. "Mallorquinisch", "Modern-Mediterran", "Tapas-Bar", "Cocktailbar", "Japanisch-Peruanisch", "Café & Brunch", "Weinbar", "Patisserie")
 • cuisine_tags: Die 5 charakteristischsten Schlagworte zu Gerichten/Zutaten/Getränken als Array
+
+OPTIK & STIL — intern, ehrliche Bestandsaufnahme für künftige Filter:
+Bewerte kritisch und realistisch — nenne auch Schwächen. Nicht jedes Restaurant ist schön oder gut angerichtet.
+• interior_tags: Die 5 ehrlichsten Schlagworte zu Einrichtung und Atmosphäre als Array.
+  Positiv-Beispiele: "Gewölbekeller", "Rooftop-Terrasse", "Rustikale Finca", "Marmor & Messing", "Kerzenschein"
+  Negativ-Beispiele: "Plastikstühle", "Neonlicht", "Touristenfalle-Deko", "Beengt & laut", "Veraltete Einrichtung", "Ikea-Feeling"
+• food_tags: Die 5 ehrlichsten Schlagworte zur Speisen-Optik und Präsentation als Array.
+  Positiv-Beispiele: "Fine-Dining-Plating", "Farbenfroh & frisch", "Üppige Portionen", "Handgemacht-Optik"
+  Negativ-Beispiele: "Lieblos angerichtet", "Fertigware-Optik", "Zu kleine Portionen", "Einheitsbrei", "Touristenportion"
 
 Antworte AUSSCHLIESSLICH mit diesem JSON (kein Markdown, kein Text davor/danach):
 {{
@@ -88,8 +97,10 @@ Antworte AUSSCHLIESSLICH mit diesem JSON (kein Markdown, kein Text davor/danach)
   "substance":    <int>,
   "audience_type": "<scene|gourmet|local|family|tourist|business|mixed>",
   "avg_price_pp": <int>,
-  "cuisine_type": "<z.B. Mallorquinisch>",
-  "cuisine_tags": ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"]
+  "cuisine_type": "<z.B. Mallorquinisch, Modern-Mediterran, Tapas-Bar>",
+  "cuisine_tags": ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"],
+  "interior_tags": ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"],
+  "food_tags":    ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"]
 }}
 Falls keine ausreichenden Daten vorhanden: null
 """
@@ -219,26 +230,30 @@ def save_critic_fields(conn, place_id: str, data: dict):
                 avg_price_pp    = %(avg_price_pp)s,
                 cuisine_type    = %(cuisine_type)s,
                 cuisine_tags    = %(cuisine_tags)s,
+                interior_tags   = %(interior_tags)s,
+                food_tags       = %(food_tags)s,
                 enriched_at     = NOW()
             WHERE place_id = %(place_id)s
             """,
             {
-                "place_id":     place_id,
-                "cuisine":      data.get("cuisine"),
-                "service":      data.get("service"),
-                "value":        data.get("value"),
-                "ambiance":     data.get("ambiance"),
-                "critic_score": data.get("critic_score"),
-                "outdoor":      data.get("outdoor"),
-                "view":         data.get("view"),
-                "scene":        data.get("scene"),
-                "local":        data.get("local"),
-                "warmth":       data.get("warmth"),
-                "substance":    data.get("substance"),
-                "audience_type":data.get("audience_type"),
-                "avg_price_pp": data.get("avg_price_pp"),
-                "cuisine_type": data.get("cuisine_type"),
-                "cuisine_tags": data.get("cuisine_tags") or None,
+                "place_id":      place_id,
+                "cuisine":       data.get("cuisine"),
+                "service":       data.get("service"),
+                "value":         data.get("value"),
+                "ambiance":      data.get("ambiance"),
+                "critic_score":  data.get("critic_score"),
+                "outdoor":       data.get("outdoor"),
+                "view":          data.get("view"),
+                "scene":         data.get("scene"),
+                "local":         data.get("local"),
+                "warmth":        data.get("warmth"),
+                "substance":     data.get("substance"),
+                "audience_type": data.get("audience_type"),
+                "avg_price_pp":  data.get("avg_price_pp"),
+                "cuisine_type":  data.get("cuisine_type"),
+                "cuisine_tags":  data.get("cuisine_tags") or None,
+                "interior_tags": data.get("interior_tags") or None,
+                "food_tags":     data.get("food_tags") or None,
             },
         )
     conn.commit()

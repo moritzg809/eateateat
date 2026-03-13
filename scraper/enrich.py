@@ -92,8 +92,17 @@ PREIS — intern, nicht anzeigen:
 • avg_price_pp: Durchschnittlicher Preis pro Person in Euro als ganze Zahl (nur Essen, ohne Getränke)
 
 KÜCHE — intern, für künftige Filter:
-• cuisine_type: Küchenbezeichnung als kurzer Text (z.B. "Mallorquinisch", "Modern Mediterranean", "Tapas", "Japanisch-Peruanisch")
+• cuisine_type: Küchenbezeichnung auf DEUTSCH, max. 3 Wörter (z.B. "Mallorquinisch", "Modern-Mediterran", "Tapas-Bar", "Cocktailbar", "Japanisch-Peruanisch", "Café & Brunch", "Weinbar", "Patisserie")
 • cuisine_tags: Die 5 charakteristischsten Schlagworte zu Gerichten/Zutaten/Getränken als Array (z.B. ["Tumbet", "Sobrasada", "Pa amb oli", "Ensaimada", "Cava"])
+
+OPTIK & STIL — intern, ehrliche Bestandsaufnahme für künftige Filter:
+Bewerte kritisch und realistisch — nenne auch Schwächen. Nicht jedes Restaurant ist schön oder gut angerichtet.
+• interior_tags: Die 5 ehrlichsten Schlagworte zu Einrichtung und Atmosphäre als Array.
+  Positiv-Beispiele: "Gewölbekeller", "Rooftop-Terrasse", "Rustikale Finca", "Marmor & Messing", "Kerzenschein"
+  Negativ-Beispiele: "Plastikstühle", "Neonlicht", "Touristenfalle-Deko", "Beengt & laut", "Veraltete Einrichtung", "Ikea-Feeling"
+• food_tags: Die 5 ehrlichsten Schlagworte zur Speisen-Optik und Präsentation als Array.
+  Positiv-Beispiele: "Fine-Dining-Plating", "Farbenfroh & frisch", "Üppige Portionen", "Handgemacht-Optik"
+  Negativ-Beispiele: "Lieblos angerichtet", "Fertigware-Optik", "Zu kleine Portionen", "Einheitsbrei", "Touristenportion"
 
 VERBOTEN — diese Phrasen kennzeichnen schlechtes Schreiben, verwende sie nie:
 "Ein Muss", "sehr zu empfehlen", "lohnenswert", "einladend", "gemütlich",
@@ -152,8 +161,10 @@ Antworte AUSSCHLIESSLICH mit diesem JSON (kein Markdown, kein Text davor/danach)
   "substance":    <int>,
   "audience_type": "<scene|gourmet|local|family|tourist|business|mixed>",
   "avg_price_pp": <int>,
-  "cuisine_type": "<z.B. Mallorquinisch>",
-  "cuisine_tags": ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"],
+  "cuisine_type": "<z.B. Mallorquinisch, Modern-Mediterran, Tapas-Bar>",
+  "cuisine_tags":  ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"],
+  "interior_tags": ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"],
+  "food_tags":     ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"],
   "summary_de":   "<2 Sätze, konkret, nur für dieses Restaurant wahr>",
   "must_order":   "<1-2 echte Gerichte/Getränke mit Namen>",
   "vibe":         "<1 Satz: Licht, Lautstärke, konkrete Gäste, Uhrzeit>"
@@ -315,6 +326,7 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
                 scene_score,    local_score,    warmth_score,   substance_score,
                 audience_type,  avg_price_pp,
                 cuisine_type,   cuisine_tags,
+                interior_tags,  food_tags,
                 summary_de, must_order, vibe, gemini_model, raw_response
             ) VALUES (
                 %s,
@@ -324,6 +336,7 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
                 %s, %s, %s, %s, %s,
                 %s, %s,
                 %s, %s, %s, %s,
+                %s, %s,
                 %s, %s,
                 %s, %s,
                 %s, %s, %s, %s, %s
@@ -355,6 +368,8 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
                 avg_price_pp    = EXCLUDED.avg_price_pp,
                 cuisine_type    = EXCLUDED.cuisine_type,
                 cuisine_tags    = EXCLUDED.cuisine_tags,
+                interior_tags   = EXCLUDED.interior_tags,
+                food_tags       = EXCLUDED.food_tags,
                 summary_de      = EXCLUDED.summary_de,
                 must_order      = EXCLUDED.must_order,
                 vibe            = EXCLUDED.vibe,
@@ -372,6 +387,7 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
                 data.get("scene"),     data.get("local"),    data.get("warmth"),   data.get("substance"),
                 data.get("audience_type"), data.get("avg_price_pp"),
                 data.get("cuisine_type"), data.get("cuisine_tags") or None,
+                data.get("interior_tags") or None, data.get("food_tags") or None,
                 data.get("summary_de"), data.get("must_order"), data.get("vibe"),
                 MODEL,
                 psycopg2.extras.Json(raw_response) if raw_response else None,

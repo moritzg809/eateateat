@@ -147,8 +147,12 @@ CREATE TABLE gemini_enrichments (
     avg_price_pp    INTEGER,  -- Ø Preis pro Person in Euro
 
     -- Cuisine classification — internal, for future clustering (added in migration 004)
-    cuisine_type    TEXT,     -- z.B. "Mallorquinisch", "Modern Mediterranean"
+    cuisine_type    TEXT,     -- z.B. "Mallorquinisch", "Modern-Mediterran"
     cuisine_tags    TEXT[],   -- top-5 Schlagworte (z.B. {"Tumbet","Sobrasada","Pa amb oli",...})
+
+    -- Visual tags — internal, for future gallery/filter features (added in migration 005)
+    interior_tags   TEXT[],   -- top-5 Schlagworte zum Einrichtungsstil (z.B. {"Rustikale Finca","Gewölbe",...})
+    food_tags       TEXT[],   -- top-5 Schlagworte zur Speisen-Optik (z.B. {"Fine-Dining-Plating","Üppig",...})
 
     -- Metadaten
     gemini_model    TEXT,
