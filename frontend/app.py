@@ -173,6 +173,8 @@ _SCORE_COLS = [
     "relaxed_score", "special_score", "foodie_score",  "lingering_score",
     "unique_score",  "outdoor_score", "view_score",
 ]
+# Critic sub-scores — separate 4-dim vector (76 % coverage, normalised independently)
+_CRITIC_COLS = ["cuisine_score", "service_score", "value_score", "ambiance_score"]
 
 
 def _load_candidates(conn) -> list[dict]:
@@ -212,6 +214,15 @@ def _load_candidates(conn) -> list[dict]:
                 COALESCE(e.dresscode_score, 0) AS dresscode_score,
                 COALESCE(e.outdoor_score,   0) AS outdoor_score,
                 COALESCE(e.view_score,      0) AS view_score,
+                COALESCE(e.cuisine_score,   0) AS cuisine_score,
+                COALESCE(e.service_score,   0) AS service_score,
+                COALESCE(e.value_score,     0) AS value_score,
+                COALESCE(e.ambiance_score,  0) AS ambiance_score,
+                e.avg_price_pp,
+                e.audience_type,
+                e.cuisine_tags,
+                e.interior_tags,
+                e.food_tags,
                 e.vibe,
                 emb.embedding,
                 COALESCE(sd.atmosphere, '{}') || COALESCE(sd.offerings, '{}') ||
@@ -243,8 +254,22 @@ def _load_candidates(conn) -> list[dict]:
         # open_slots as a frozenset for fast Jaccard
         row["slots_set"] = frozenset(row.get("open_slots") or [])
 
-        # SerpAPI tags as a frozenset for fast Jaccard (v3)
+        # SerpAPI tags as a frozenset for fast Jaccard
         row["tags_set"] = frozenset(row.get("tags") or [])
+
+        # Cuisine / interior / food tags frozensets (new signal)
+        row["cuisine_tags_set"]  = frozenset(row.get("cuisine_tags")  or [])
+        row["interior_tags_set"] = frozenset(row.get("interior_tags") or [])
+        row["food_tags_set"]     = frozenset(row.get("food_tags")     or [])
+
+        # Critic sub-score vector (normalised) — None if all zeros (no critic data)
+        critic_vec = np.array(
+            [row["cuisine_score"], row["service_score"],
+             row["value_score"],   row["ambiance_score"]],
+            dtype=np.float32,
+        )
+        cnorm = np.linalg.norm(critic_vec)
+        row["critic_norm"] = critic_vec / cnorm if cnorm > 0 else None
 
         processed.append(row)
 
@@ -270,29 +295,106 @@ def _price_bonus(pl_a: str | None, pl_b: str | None) -> float:
     return 0.05 if diff == 0 else 0.025 if diff == 1 else 0.0
 
 
+def _price_pp_bonus(
+    pp_a: int | None, pp_b: int | None,
+    pl_a: str | None = None, pl_b: str | None = None,
+) -> float:
+    """Continuous price similarity [0, 0.05].
+
+    Uses avg_price_pp when both are available (more precise).
+    Falls back to discrete price_level comparison otherwise.
+    """
+    if pp_a and pp_b:
+        max_price = max(pp_a, pp_b, 1)
+        return max(0.0, 0.05 * (1.0 - abs(pp_a - pp_b) / max_price))
+    return _price_bonus(pl_a, pl_b)
+
+
+def _compute_similarity(
+    target: dict,
+    candidates: list[dict],
+    exclude_id: str,
+    threshold: float = 0.50,
+) -> list[tuple[float, str]]:
+    """Unified similarity scorer — improved formula incorporating all signals.
+
+    With embeddings (≈ sum 1.00 when all signals available):
+      0.40 × embedding cosine
+      0.20 × 11-dim profile-score cosine
+      0.12 × cuisine_tags Jaccard      (food style match)
+      0.10 × critic sub-score cosine   (0 when unavailable)
+      0.08 × SerpAPI tag Jaccard
+      0.05 × open-hours Jaccard
+      + type / price / audience bonuses
+
+    Without embeddings:
+      0.50 × profile-score cosine
+      0.20 × cuisine_tags Jaccard
+      0.10 × critic sub-score cosine   (0 when unavailable)
+      0.10 × SerpAPI tag Jaccard
+      0.05 × open-hours Jaccard
+      + type / price / audience bonuses
+    """
+    t_scores   = target["scores_norm"]
+    t_emb      = target["emb_norm"]
+    t_slots    = target["slots_set"]
+    t_tags     = target["tags_set"]
+    t_cuisine  = target["cuisine_tags_set"]
+    t_critic   = target.get("critic_norm")
+    t_type     = target["place_type"]
+    t_price    = target["price_level"]
+    t_pp       = target.get("avg_price_pp")
+    t_audience = target.get("audience_type")
+    use_emb    = t_emb is not None
+
+    ranked: list[tuple[float, str]] = []
+    for cand in candidates:
+        if cand["place_id"] == exclude_id or cand["scores_norm"] is None:
+            continue
+
+        score_cos  = float(np.dot(t_scores, cand["scores_norm"]))
+        c_emb      = cand["emb_norm"]
+        emb_cos    = float(np.dot(t_emb, c_emb)) if use_emb and c_emb is not None else 0.0
+        slots_j    = _jaccard(t_slots,   cand["slots_set"])
+        tags_j     = _jaccard(t_tags,    cand["tags_set"])
+        cuisine_j  = _jaccard(t_cuisine, cand["cuisine_tags_set"])
+        c_critic   = cand.get("critic_norm")
+        critic_cos = float(np.dot(t_critic, c_critic)) if (t_critic is not None and c_critic is not None) else 0.0
+        type_b     = 0.05 if cand["place_type"] == t_type else 0.0
+        price_b    = _price_pp_bonus(t_pp, cand.get("avg_price_pp"), t_price, cand.get("price_level"))
+        audience_b = 0.03 if (t_audience and t_audience == cand.get("audience_type")) else 0.0
+
+        if use_emb and c_emb is not None:
+            sim = (0.40 * emb_cos
+                 + 0.20 * score_cos
+                 + 0.12 * cuisine_j
+                 + 0.10 * critic_cos
+                 + 0.08 * tags_j
+                 + 0.05 * slots_j
+                 + type_b + price_b + audience_b)
+        else:
+            sim = (0.50 * score_cos
+                 + 0.20 * cuisine_j
+                 + 0.10 * critic_cos
+                 + 0.10 * tags_j
+                 + 0.05 * slots_j
+                 + type_b + price_b + audience_b)
+
+        if sim >= threshold:
+            ranked.append((sim, cand["place_id"]))
+
+    ranked.sort(reverse=True)
+    return ranked
+
+
 # ── Recommender API ──────────────────────────────────────────────────────────
 
 @app.route("/api/similar/<place_id>")
 def api_similar(place_id):
     """Return up to n restaurants similar to <place_id>.
 
-    Composite similarity — two modes:
-
-    With embeddings (when target + candidate both have Gemini embeddings):
-      0.55 × embedding cosine    (text: description, types, tags, summary, vibe, …)
-      0.20 × profile-score cosine (11 Gemini dimension scores)
-      0.15 × open-hours Jaccard  (2-h time-slot overlap)
-      0.05 × type bonus
-      0.05 × price bonus
-
-    Fallback (SQL, when embeddings unavailable):
-      0.50 × profile-score cosine
-      0.20 × SerpAPI tag Jaccard
-      0.15 × open-hours Jaccard
-      0.10 × type bonus
-      0.05 × price bonus
-
-    Only results with similarity ≥ 0.50 are returned.
+    Uses the improved _compute_similarity formula (cuisine tags, critic sub-scores,
+    continuous price, audience bonus).  Only results ≥ 0.50 are returned.
     """
     n    = min(int(request.args.get("n", 6)), 20)
     conn = get_db()
@@ -301,64 +403,16 @@ def api_similar(place_id):
     finally:
         conn.close()
 
-    # ── Find target ───────────────────────────────────────────────────────────
     target = next((c for c in candidates if c["place_id"] == place_id), None)
     if not target or target["scores_norm"] is None:
-        return jsonify([])  # no scores → can't rank
+        return jsonify([])
 
-    t_scores  = target["scores_norm"]
-    t_emb     = target["emb_norm"]
-    t_slots   = target["slots_set"]
-    t_type    = target["place_type"]
-    t_price   = target["price_level"]
-    use_emb   = t_emb is not None
+    ranked     = _compute_similarity(target, candidates, place_id, threshold=0.50)
+    cand_by_id = {c["place_id"]: c for c in candidates}
 
-    # ── Score each candidate ──────────────────────────────────────────────────
-    ranked: list[tuple[float, dict]] = []
-
-    for cand in candidates:
-        if cand["place_id"] == place_id:
-            continue
-        if cand["scores_norm"] is None:
-            continue
-
-        # Profile-score cosine (always available)
-        score_cos = float(np.dot(t_scores, cand["scores_norm"]))
-
-        # Embedding cosine (only when both have embeddings)
-        emb_cos = 0.0
-        c_emb   = cand["emb_norm"]
-        if use_emb and c_emb is not None:
-            emb_cos = float(np.dot(t_emb, c_emb))
-
-        # Open-hours Jaccard
-        slots_j = _jaccard(t_slots, cand["slots_set"])
-
-        # Type & price bonuses
-        type_b  = 0.05 if cand["place_type"] == t_type else 0.0
-        price_b = _price_bonus(t_price, cand["price_level"])
-
-        if use_emb and c_emb is not None:
-            # Full embedding mode
-            sim = (0.55 * emb_cos
-                 + 0.20 * score_cos
-                 + 0.15 * slots_j
-                 + type_b + price_b)
-        else:
-            # Scores-only mode (no embedding for target or candidate)
-            sim = (0.60 * score_cos
-                 + 0.15 * slots_j
-                 + type_b + price_b * 2)   # bump price weight slightly
-
-        if sim >= 0.50:
-            ranked.append((sim, cand))
-
-    ranked.sort(key=lambda x: x[0], reverse=True)
-
-    # ── Build response ────────────────────────────────────────────────────────
     results = []
-    for sim, cand in ranked[:n]:
-        pid        = cand["place_id"]
+    for sim, pid in ranked[:n]:
+        cand = cand_by_id[pid]
         type_emoji, _ = _classify_type(cand.get("place_type"))
         results.append({
             "place_id":    pid,
@@ -543,15 +597,7 @@ def api_similar_v1(place_id):
 
 @app.route("/api/similar_v3/<place_id>")
 def api_similar_v3(place_id):
-    """V3 recommender — embeddings + SerpAPI tag Jaccard, lower embedding weight.
-
-    0.40 × embedding cosine
-    0.20 × profile-score cosine
-    0.15 × SerpAPI tag Jaccard
-    0.15 × open-hours Jaccard
-    0.05 × type bonus
-    0.05 × price bonus
-    """
+    """V3 recommender — same improved formula as v2 (alias for A/B testing)."""
     n    = min(int(request.args.get("n", 6)), 20)
     conn = get_db()
     try:
@@ -563,49 +609,12 @@ def api_similar_v3(place_id):
     if not target or target["scores_norm"] is None:
         return jsonify([])
 
-    t_scores = target["scores_norm"]
-    t_emb    = target["emb_norm"]
-    t_slots  = target["slots_set"]
-    t_tags   = target["tags_set"]
-    t_type   = target["place_type"]
-    t_price  = target["price_level"]
-    use_emb  = t_emb is not None
-
-    ranked: list[tuple[float, dict]] = []
-
-    for cand in candidates:
-        if cand["place_id"] == place_id or cand["scores_norm"] is None:
-            continue
-
-        score_cos = float(np.dot(t_scores, cand["scores_norm"]))
-        c_emb     = cand["emb_norm"]
-        emb_cos   = float(np.dot(t_emb, c_emb)) if use_emb and c_emb is not None else 0.0
-        slots_j   = _jaccard(t_slots, cand["slots_set"])
-        tags_j    = _jaccard(t_tags,  cand["tags_set"])
-        type_b    = 0.05 if cand["place_type"] == t_type else 0.0
-        price_b   = _price_bonus(t_price, cand["price_level"])
-
-        if use_emb and c_emb is not None:
-            sim = (0.40 * emb_cos
-                 + 0.20 * score_cos
-                 + 0.15 * tags_j
-                 + 0.15 * slots_j
-                 + type_b + price_b)
-        else:
-            # Fallback without embeddings: redistribute emb weight to scores + tags
-            sim = (0.45 * score_cos
-                 + 0.25 * tags_j
-                 + 0.15 * slots_j
-                 + type_b + price_b)
-
-        if sim >= 0.50:
-            ranked.append((sim, cand))
-
-    ranked.sort(key=lambda x: x[0], reverse=True)
+    ranked     = _compute_similarity(target, candidates, place_id, threshold=0.50)
+    cand_by_id = {c["place_id"]: c for c in candidates}
 
     results = []
-    for sim, cand in ranked[:n]:
-        pid = cand["place_id"]
+    for sim, pid in ranked[:n]:
+        cand = cand_by_id[pid]
         type_emoji, _ = _classify_type(cand.get("place_type"))
         results.append({
             "place_id":    pid,
@@ -724,38 +733,14 @@ def restaurant_page(place_id):
         prev_id = nav[0] if nav else None
         next_id = nav[1] if nav else None
 
-        # ── Similar restaurants (v2 logic, top 6, threshold 0.60) ─────────
+        # ── Similar restaurants (improved formula, top 6) ─────────────────
         candidates  = _load_candidates(conn)
         target_cand = next((c for c in candidates if c["place_id"] == place_id), None)
         similar_ids: list[str] = []
         sim_by_id:   dict[str, float] = {}
 
         if target_cand and target_cand["scores_norm"] is not None:
-            t_scores = target_cand["scores_norm"]
-            t_emb    = target_cand["emb_norm"]
-            t_slots  = target_cand["slots_set"]
-            t_type   = target_cand["place_type"]
-            t_price  = target_cand["price_level"]
-            use_emb  = t_emb is not None
-            ranked: list[tuple[float, str]] = []
-            for cand in candidates:
-                if cand["place_id"] == place_id or cand["scores_norm"] is None:
-                    continue
-                score_cos = float(np.dot(t_scores, cand["scores_norm"]))
-                c_emb     = cand["emb_norm"]
-                emb_cos   = float(np.dot(t_emb, c_emb)) if use_emb and c_emb is not None else 0.0
-                slots_j   = _jaccard(t_slots, cand["slots_set"])
-                type_b    = 0.05 if cand["place_type"] == t_type else 0.0
-                price_b   = _price_bonus(t_price, cand["price_level"])
-                if use_emb and c_emb is not None:
-                    sim = 0.55 * emb_cos + 0.20 * score_cos + 0.15 * slots_j + type_b + price_b
-                    threshold = 0.60
-                else:
-                    sim = 0.60 * score_cos + 0.15 * slots_j + type_b + price_b * 2
-                    threshold = 0.45
-                if sim >= threshold:
-                    ranked.append((sim, cand["place_id"]))
-            ranked.sort(reverse=True)
+            ranked      = _compute_similarity(target_cand, candidates, place_id, threshold=0.45)
             similar_ids = [pid for _, pid in ranked[:6]]
             sim_by_id   = {pid: sim for sim, pid in ranked[:6]}
 
@@ -811,42 +796,15 @@ def similar_page(place_id):
     try:
         candidates = _load_candidates(conn)
 
-        # Score using v2 logic
+        # Score using improved formula
         target = next((c for c in candidates if c["place_id"] == place_id), None)
         if not target or target["scores_norm"] is None:
             return render_template("similar.html", target=None, restaurants=[], error="Restaurant nicht gefunden.")
 
-        t_scores = target["scores_norm"]
-        t_emb    = target["emb_norm"]
-        t_slots  = target["slots_set"]
-        t_type   = target["place_type"]
-        t_price  = target["price_level"]
-        use_emb  = t_emb is not None
-
-        ranked: list[tuple[float, str]] = []
-        for cand in candidates:
-            if cand["place_id"] == place_id or cand["scores_norm"] is None:
-                continue
-            score_cos = float(np.dot(t_scores, cand["scores_norm"]))
-            c_emb     = cand["emb_norm"]
-            emb_cos   = float(np.dot(t_emb, c_emb)) if use_emb and c_emb is not None else 0.0
-            slots_j   = _jaccard(t_slots, cand["slots_set"])
-            type_b    = 0.05 if cand["place_type"] == t_type else 0.0
-            price_b   = _price_bonus(t_price, cand["price_level"])
-            if use_emb and c_emb is not None:
-                sim = 0.55 * emb_cos + 0.20 * score_cos + 0.15 * slots_j + type_b + price_b
-                threshold = 0.75
-            else:
-                # No embeddings yet — use V1-style score-only formula with lower threshold
-                sim = 0.60 * score_cos + 0.15 * slots_j + type_b + price_b * 2
-                threshold = 0.50
-            if sim >= threshold:
-                ranked.append((sim, cand["place_id"]))
-
-        ranked.sort(reverse=True)
-        similar_ids   = [pid for _, pid in ranked]
-        sim_by_id     = {pid: sim for sim, pid in ranked}
-        fetch_ids     = [place_id] + similar_ids
+        ranked      = _compute_similarity(target, candidates, place_id, threshold=0.55)
+        similar_ids = [pid for _, pid in ranked]
+        sim_by_id   = {pid: sim for sim, pid in ranked}
+        fetch_ids   = [place_id] + similar_ids
 
         # Fetch full restaurant data for target + similar
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -914,6 +872,7 @@ def index():
     min_score   = int(request.args.get("min_score", 7))
     page        = max(1, int(request.args.get("page", 1) or 1))
     view        = request.args.get("view", "").strip()   # "" | "want" | "been"
+    sort        = request.args.get("sort", "").strip()   # "" | "quality"
     type_filter = request.args.get("type_filter", "").strip()
     tag_filter  = request.args.get("tag_filter",  "").strip()
 
@@ -924,7 +883,7 @@ def index():
         "profile_key": profile_key, "min_score": min_score,
         "profiles": PROFILES,
         "page": page, "total_pages": 1, "total_filtered": 0, "per_page": PER_PAGE,
-        "view": view,
+        "view": view, "sort": sort,
         "type_filter": type_filter, "tag_filter": tag_filter,
         "available_types": [], "available_tags": [],
         "error": None,
@@ -1000,9 +959,14 @@ def index():
                 params["tag_filter"] = tag_filter
 
             where = " AND ".join(conditions)
-            order = f"e.{score_col} DESC, t.rating DESC" if score_col else "t.rating DESC, t.rating_count DESC"
+            if sort == "quality":
+                order = "quality_score DESC NULLS LAST, t.rating DESC"
+            elif score_col:
+                order = f"e.{score_col} DESC, t.rating DESC"
+            else:
+                order = "t.rating DESC, t.rating_count DESC"
 
-            # Count total matching rows for pagination
+            # Count total matching rows for pagination (no quality CTE needed)
             cur.execute(f"""
                 SELECT COUNT(*) AS n
                 FROM top_restaurants t
@@ -1021,7 +985,56 @@ def index():
             ctx["total_pages"]    = total_pages
             ctx["page"]           = page
 
+            # ── Quality sort: prepend CTEs that compute 3-pillar quality score ──
+            # quality_score = 0.45 × critic_score_zscore
+            #               + 0.35 × bayesian_google_zscore   (50-prior smoothing)
+            #               + 0.20 × value_score_zscore
+            if sort == "quality":
+                quality_cte = """
+                    WITH quality_stats AS (
+                        SELECT
+                            AVG(e2.critic_score)::float     AS avg_critic,
+                            STDDEV(e2.critic_score)::float  AS std_critic,
+                            AVG(e2.value_score)::float      AS avg_value,
+                            STDDEV(e2.value_score)::float   AS std_value,
+                            AVG(tr.rating)::float           AS global_mean_rating
+                        FROM top_restaurants tr
+                        JOIN gemini_enrichments e2 ON e2.place_id = tr.place_id
+                        WHERE e2.critic_score IS NOT NULL AND e2.value_score IS NOT NULL
+                    ),
+                    bayesian_base AS (
+                        SELECT
+                            tr.place_id,
+                            (50.0 * qs.global_mean_rating
+                             + tr.rating_count * tr.rating)::float
+                            / (50.0 + tr.rating_count) AS bayes_rating
+                        FROM top_restaurants tr
+                        CROSS JOIN quality_stats qs
+                    ),
+                    bayesian_stats AS (
+                        SELECT
+                            AVG(bayes_rating)::float    AS avg_bayes,
+                            STDDEV(bayes_rating)::float AS std_bayes
+                        FROM bayesian_base
+                    )
+                """
+                quality_col = """,
+                    CASE WHEN e.critic_score IS NOT NULL AND e.value_score IS NOT NULL THEN
+                        0.45 * (e.critic_score    - qs.avg_critic) / NULLIF(qs.std_critic, 0.001)
+                      + 0.35 * (bb.bayes_rating   - bs.avg_bayes)  / NULLIF(bs.std_bayes,  0.001)
+                      + 0.20 * (e.value_score      - qs.avg_value)  / NULLIF(qs.std_value,  0.001)
+                    END AS quality_score"""
+                quality_joins = """
+                    CROSS JOIN quality_stats qs
+                    LEFT  JOIN bayesian_base  bb ON bb.place_id = t.place_id
+                    CROSS JOIN bayesian_stats bs"""
+            else:
+                quality_cte   = ""
+                quality_col   = ""
+                quality_joins = ""
+
             cur.execute(f"""
+                {quality_cte}
                 SELECT
                     t.*,
                     e.family_score,  e.date_score,    e.friends_score, e.solo_score,
@@ -1039,12 +1052,14 @@ def index():
                     res.raw_data->>'type' AS place_type,
                     f.list_type             AS fav_type,
                     f.score                 AS fav_score
+                    {quality_col}
                 FROM top_restaurants t
                 LEFT JOIN gemini_enrichments e  ON e.place_id  = t.place_id
                 LEFT JOIN serpapi_details    sd ON sd.place_id = t.place_id
                 LEFT JOIN restaurants       res ON res.place_id = t.place_id
                 LEFT JOIN user_favorites      f ON f.place_id  = t.place_id
                                                AND f.session_id = %(sid)s
+                {quality_joins}
                 WHERE {where}
                 ORDER BY {order}
                 LIMIT %(per_page)s OFFSET %(offset)s
@@ -1056,6 +1071,7 @@ def index():
                 r = dict(row)
                 r["city"] = _extract_city(r.get("address"))
                 r["type_emoji"], r["type_label"] = _classify_type(r.get("place_type"))
+                r.setdefault("quality_score", None)
 
                 # Load cached photos from Docker volume (downloaded during scraping)
                 place_id_r = r["place_id"]
