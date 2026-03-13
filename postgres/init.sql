@@ -125,6 +125,31 @@ CREATE TABLE gemini_enrichments (
     must_order      TEXT,   -- was bestellen
     vibe            TEXT,   -- ein Satz zur Atmosphäre
 
+    -- Critic-style quality dimensions (added in migration 004)
+    cuisine_score   SMALLINT CHECK (cuisine_score   BETWEEN 1 AND 10),  -- Kochqualität
+    service_score   SMALLINT CHECK (service_score   BETWEEN 1 AND 10),  -- Service
+    value_score     SMALLINT CHECK (value_score     BETWEEN 1 AND 10),  -- Preis-Leistung
+    ambiance_score  SMALLINT CHECK (ambiance_score  BETWEEN 1 AND 10),  -- Ambiente
+    critic_score    SMALLINT CHECK (critic_score    BETWEEN 1 AND 10),  -- Gesamtwertung (Kritiker)
+
+    -- Display scores — filter pills in frontend (added in migration 004)
+    outdoor_score   SMALLINT CHECK (outdoor_score   BETWEEN 1 AND 10),  -- 🏡 Terrasse
+    view_score      SMALLINT CHECK (view_score      BETWEEN 1 AND 10),  -- 🌅 Aussicht
+
+    -- Audience/target-group dimensions — internal, not displayed (added in migration 004)
+    scene_score     SMALLINT CHECK (scene_score     BETWEEN 1 AND 10),  -- Gesehen-werden-Faktor
+    local_score     SMALLINT CHECK (local_score     BETWEEN 1 AND 10),  -- Einheimische vs. Touristen
+    warmth_score    SMALLINT CHECK (warmth_score    BETWEEN 1 AND 10),  -- Herzlichkeit
+    substance_score SMALLINT CHECK (substance_score BETWEEN 1 AND 10),  -- Qualität vor Image
+    audience_type   TEXT,   -- "scene"|"gourmet"|"local"|"family"|"tourist"|"business"|"mixed"
+
+    -- Price estimate — internal (added in migration 004)
+    avg_price_pp    INTEGER,  -- Ø Preis pro Person in Euro
+
+    -- Cuisine classification — internal, for future clustering (added in migration 004)
+    cuisine_type    TEXT,     -- z.B. "Mallorquinisch", "Modern Mediterranean"
+    cuisine_tags    TEXT[],   -- top-5 Schlagworte (z.B. {"Tumbet","Sobrasada","Pa amb oli",...})
+
     -- Metadaten
     gemini_model    TEXT,
     enriched_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -176,7 +201,7 @@ CREATE INDEX idx_serpapi_details_place_id ON serpapi_details (place_id);
 --
 --   Quality gate: must score >= 8 in at least 2 enrichment
 --   categories (family, date, friends, solo, relaxed, party,
---   special, foodie, lingering, unique, dresscode).
+--   special, foodie, lingering, unique, dresscode, outdoor, view).
 --   Restaurants without enrichment data pass through unchanged.
 -- =============================================================
 

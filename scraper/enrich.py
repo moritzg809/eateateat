@@ -70,6 +70,31 @@ Bewerte für 11 Reiseprofile (1–10, ganze Zahlen):
 • Geheimtipp   (1=Reisebus wartet draußen, 10=keine Touristen, Locals sitzen hier täglich)
 • Dress Code   (1=Badeshorts & Flip-Flops okay, 3=Jeans ist ok, 7=T-Shirt ist fehl am Platz, 10=Hemd/Kleid erwartet, Jeans auffällig)
 
+RESTAURANTKRITIK — wie ein professioneller Restauranttester (1–10):
+• cuisine:      Kochqualität — Zutaten, Technik, Geschmack, Konsistenz (Gewicht 45 %)
+• service:      Professionalität, Freundlichkeit, Timing (25 %)
+• value:        Preis-Leistungs-Verhältnis (20 %)
+• ambiance:     Einrichtung, Atmosphäre, Komfort, Sauberkeit (10 %)
+• critic_score: Gesamtnote = cuisine×0.45 + service×0.25 + value×0.20 + ambiance×0.10 (gerundet auf ganze Zahl)
+
+MALLORCA-KONTEXT — für Filter, nicht anzeigen (1–10):
+• outdoor:  Terrasse / Außenbereich (1=keiner, 5=einfache Terrasse, 10=traumhafte Outdoor-Fläche)
+• view:     Aussicht (1=keine, 5=schöner Blick, 10=spektakulärer Meerblick oder Sonnenuntergang)
+
+ZIELGRUPPE — intern, nicht anzeigen (1–10):
+• scene:     Gesehen-werden-Faktor (10=reine Scene/Instagram-Restaurant, 1=unauffällig)
+• local:     Einheimische vs. Touristen (10=fast nur Locals, 1=reine Touristenfalle)
+• warmth:    Herzlichkeit (10=jeder willkommen, 1=einschüchternd exklusiv)
+• substance: Qualität vor Image (10=pure Substanz, 1=Style über Inhalt)
+• audience_type: Eine Kategorie: "scene"|"gourmet"|"local"|"family"|"tourist"|"business"|"mixed"
+
+PREIS — intern, nicht anzeigen:
+• avg_price_pp: Durchschnittlicher Preis pro Person in Euro als ganze Zahl (nur Essen, ohne Getränke)
+
+KÜCHE — intern, für künftige Filter:
+• cuisine_type: Küchenbezeichnung als kurzer Text (z.B. "Mallorquinisch", "Modern Mediterranean", "Tapas", "Japanisch-Peruanisch")
+• cuisine_tags: Die 5 charakteristischsten Schlagworte zu Gerichten/Zutaten/Getränken als Array (z.B. ["Tumbet", "Sobrasada", "Pa amb oli", "Ensaimada", "Cava"])
+
 VERBOTEN — diese Phrasen kennzeichnen schlechtes Schreiben, verwende sie nie:
 "Ein Muss", "sehr zu empfehlen", "lohnenswert", "einladend", "gemütlich",
 "kulinarisches Erlebnis", "gastronomische Reise", "ideal für", "perfekt für",
@@ -103,20 +128,35 @@ vibe — Beschreibe in 1-3 Sätzen wie es sich dort anfühlt. Kein vorgegebenes 
 
 Antworte AUSSCHLIESSLICH mit diesem JSON (kein Markdown, kein Text davor/danach):
 {{
-  "family":    <int>,
-  "date":      <int>,
-  "friends":   <int>,
-  "solo":      <int>,
-  "relaxed":   <int>,
-  "party":     <int>,
-  "special":   <int>,
-  "foodie":    <int>,
-  "lingering":  <int>,
-  "unique":     <int>,
-  "dresscode":  <int>,
-  "summary_de": "<2 Sätze, konkret, nur für dieses Restaurant wahr>",
-  "must_order": "<1-2 echte Gerichte/Getränke mit Namen>",
-  "vibe":       "<1 Satz: Licht, Lautstärke, konkrete Gäste, Uhrzeit>"
+  "family":       <int>,
+  "date":         <int>,
+  "friends":      <int>,
+  "solo":         <int>,
+  "relaxed":      <int>,
+  "party":        <int>,
+  "special":      <int>,
+  "foodie":       <int>,
+  "lingering":    <int>,
+  "unique":       <int>,
+  "dresscode":    <int>,
+  "cuisine":      <int>,
+  "service":      <int>,
+  "value":        <int>,
+  "ambiance":     <int>,
+  "critic_score": <int>,
+  "outdoor":      <int>,
+  "view":         <int>,
+  "scene":        <int>,
+  "local":        <int>,
+  "warmth":       <int>,
+  "substance":    <int>,
+  "audience_type": "<scene|gourmet|local|family|tourist|business|mixed>",
+  "avg_price_pp": <int>,
+  "cuisine_type": "<z.B. Mallorquinisch>",
+  "cuisine_tags": ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"],
+  "summary_de":   "<2 Sätze, konkret, nur für dieses Restaurant wahr>",
+  "must_order":   "<1-2 echte Gerichte/Getränke mit Namen>",
+  "vibe":         "<1 Satz: Licht, Lautstärke, konkrete Gäste, Uhrzeit>"
 }}"""
 
 # ---------------------------------------------------------------------------
@@ -264,15 +304,25 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
             """
             INSERT INTO gemini_enrichments (
                 place_id,
-                family_score, date_score,   friends_score, solo_score,
-                relaxed_score, party_score, special_score, foodie_score,
-                lingering_score, unique_score, dresscode_score,
+                family_score,   date_score,     friends_score,  solo_score,
+                relaxed_score,  party_score,    special_score,  foodie_score,
+                lingering_score, unique_score,  dresscode_score,
+                cuisine_score,  service_score,  value_score,    ambiance_score, critic_score,
+                outdoor_score,  view_score,
+                scene_score,    local_score,    warmth_score,   substance_score,
+                audience_type,  avg_price_pp,
+                cuisine_type,   cuisine_tags,
                 summary_de, must_order, vibe, gemini_model, raw_response
             ) VALUES (
                 %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s,
+                %s, %s, %s, %s,
+                %s, %s,
+                %s, %s,
                 %s, %s, %s, %s, %s
             )
             ON CONFLICT (place_id) DO UPDATE SET
@@ -287,6 +337,21 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
                 lingering_score = EXCLUDED.lingering_score,
                 unique_score    = EXCLUDED.unique_score,
                 dresscode_score = EXCLUDED.dresscode_score,
+                cuisine_score   = EXCLUDED.cuisine_score,
+                service_score   = EXCLUDED.service_score,
+                value_score     = EXCLUDED.value_score,
+                ambiance_score  = EXCLUDED.ambiance_score,
+                critic_score    = EXCLUDED.critic_score,
+                outdoor_score   = EXCLUDED.outdoor_score,
+                view_score      = EXCLUDED.view_score,
+                scene_score     = EXCLUDED.scene_score,
+                local_score     = EXCLUDED.local_score,
+                warmth_score    = EXCLUDED.warmth_score,
+                substance_score = EXCLUDED.substance_score,
+                audience_type   = EXCLUDED.audience_type,
+                avg_price_pp    = EXCLUDED.avg_price_pp,
+                cuisine_type    = EXCLUDED.cuisine_type,
+                cuisine_tags    = EXCLUDED.cuisine_tags,
                 summary_de      = EXCLUDED.summary_de,
                 must_order      = EXCLUDED.must_order,
                 vibe            = EXCLUDED.vibe,
@@ -296,9 +361,14 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
             """,
             (
                 place_id,
-                data.get("family"),   data.get("date"),     data.get("friends"), data.get("solo"),
-                data.get("relaxed"),  data.get("party"),    data.get("special"), data.get("foodie"),
-                data.get("lingering"), data.get("unique"),  data.get("dresscode"),
+                data.get("family"),    data.get("date"),     data.get("friends"),  data.get("solo"),
+                data.get("relaxed"),   data.get("party"),    data.get("special"),  data.get("foodie"),
+                data.get("lingering"), data.get("unique"),   data.get("dresscode"),
+                data.get("cuisine"),   data.get("service"),  data.get("value"),    data.get("ambiance"), data.get("critic_score"),
+                data.get("outdoor"),   data.get("view"),
+                data.get("scene"),     data.get("local"),    data.get("warmth"),   data.get("substance"),
+                data.get("audience_type"), data.get("avg_price_pp"),
+                data.get("cuisine_type"), data.get("cuisine_tags") or None,
                 data.get("summary_de"), data.get("must_order"), data.get("vibe"),
                 MODEL,
                 psycopg2.extras.Json(raw_response) if raw_response else None,

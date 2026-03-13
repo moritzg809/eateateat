@@ -27,6 +27,7 @@ import time
 
 import psycopg2.extras
 
+import critic_enrich
 import detail_scrape
 import enrich as enricher
 import gem_qualify
@@ -49,7 +50,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "verify"]
+ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "verify"]
 
 # Quality thresholds (must match config)
 MIN_RATING  = 4.5
@@ -253,6 +254,36 @@ def stage_gem_qualify(conn, dry_run: bool = False, limit=None, daily_limit: int 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Stage 4.5: Critic Enrich
+# ─────────────────────────────────────────────────────────────────────────────
+
+def stage_critic_enrich(conn, dry_run: bool = False, limit=None, daily_limit: int = 500):
+    """
+    Backfill critic-style scores for complete restaurants that still lack them.
+    Shares the daily Gemini quota with enrich + gem_qualify.
+    """
+    today_enrich   = count_today_enrichments(conn)
+    today_qualify  = gem_qualify.count_today_prequalify(conn)
+    total_today    = today_enrich + today_qualify
+    remaining      = daily_limit - total_today
+
+    if remaining <= 0:
+        logger.info(
+            "[CRITIC_ENRICH] Daily cap reached (%d/%d used) — skipping.",
+            total_today, daily_limit,
+        )
+        return
+
+    effective_limit = limit if (limit is not None and limit <= remaining) else remaining
+    logger.info(
+        "[CRITIC_ENRICH] Starting (quota used today: %d/%d, will process up to %d)…",
+        total_today, daily_limit, effective_limit,
+    )
+    critic_enrich.run(limit=effective_limit, dry_run=dry_run, backfill=False, daily_limit=daily_limit)
+    logger.info("[CRITIC_ENRICH] Done.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Stage 5: Details
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -397,6 +428,9 @@ def main():
 
     if "gem_qualify" in stages:
         stage_gem_qualify(conn, dry_run=args.dry_run, limit=args.limit, daily_limit=args.daily_limit)
+
+    if "critic_enrich" in stages:
+        stage_critic_enrich(conn, dry_run=args.dry_run, limit=args.limit, daily_limit=args.daily_limit)
 
     if "details" in stages:
         stage_details(conn, dry_run=args.dry_run, limit=args.limit)

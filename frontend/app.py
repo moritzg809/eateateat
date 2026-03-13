@@ -21,12 +21,12 @@ PROFILES = [
     ("friends",  "👯",     "Friends Trip"),
     ("solo",     "🧍",     "Solo"),
     ("relaxed",  "😌",     "Entspannt"),
-    ("party",    "🎉",     "Party Vibe"),
     ("special",  "✨",     "Besonderer Anlass"),
     ("foodie",   "🍽️",    "Foodie"),
     ("lingering","☕",     "Verweilen"),
     ("unique",   "💎",     "Geheimtipp"),
-    ("dresscode","👔",     "Dress Code"),
+    ("outdoor",  "🏡",     "Terrasse"),
+    ("view",     "🌅",     "Aussicht"),
 ]
 
 
@@ -169,9 +169,9 @@ _CAND_CACHE: tuple[float, list[dict]] | None = None
 _CAND_CACHE_TTL = 300  # seconds
 
 _SCORE_COLS = [
-    "family_score", "date_score",   "friends_score", "solo_score",
-    "relaxed_score","party_score",  "special_score", "foodie_score",
-    "lingering_score","unique_score","dresscode_score",
+    "family_score",  "date_score",    "friends_score", "solo_score",
+    "relaxed_score", "special_score", "foodie_score",  "lingering_score",
+    "unique_score",  "outdoor_score", "view_score",
 ]
 
 
@@ -671,9 +671,14 @@ def similar_page(place_id):
             cur.execute("""
                 SELECT
                     t.*,
-                    e.family_score, e.date_score,    e.friends_score, e.solo_score,
-                    e.relaxed_score, e.party_score,  e.special_score, e.foodie_score,
+                    e.family_score,  e.date_score,    e.friends_score, e.solo_score,
+                    e.relaxed_score, e.party_score,   e.special_score, e.foodie_score,
                     e.lingering_score, e.unique_score, e.dresscode_score,
+                    e.outdoor_score, e.view_score,
+                    e.cuisine_score, e.service_score, e.value_score,
+                    e.ambiance_score, e.critic_score,
+                    e.audience_type, e.avg_price_pp,
+                    e.cuisine_type,  e.cuisine_tags,
                     e.summary_de, e.must_order, e.vibe,
                     sd.highlights, sd.popular_for, sd.offerings, sd.atmosphere,
                     sd.crowd, sd.planning, sd.amenities, sd.dining_options,
@@ -854,9 +859,14 @@ def index():
             cur.execute(f"""
                 SELECT
                     t.*,
-                    e.family_score, e.date_score,    e.friends_score, e.solo_score,
-                    e.relaxed_score, e.party_score,  e.special_score, e.foodie_score,
+                    e.family_score,  e.date_score,    e.friends_score, e.solo_score,
+                    e.relaxed_score, e.party_score,   e.special_score, e.foodie_score,
                     e.lingering_score, e.unique_score, e.dresscode_score,
+                    e.outdoor_score, e.view_score,
+                    e.cuisine_score, e.service_score, e.value_score,
+                    e.ambiance_score, e.critic_score,
+                    e.audience_type, e.avg_price_pp,
+                    e.cuisine_type,  e.cuisine_tags,
                     e.summary_de, e.must_order, e.vibe,
                     sd.highlights, sd.popular_for, sd.offerings, sd.atmosphere,
                     sd.crowd, sd.planning, sd.amenities, sd.dining_options,
