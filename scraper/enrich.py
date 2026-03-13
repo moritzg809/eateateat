@@ -208,6 +208,9 @@ def call_gemini(name: str, address: str, lat=None, lng=None, website: str | None
     config_kwargs: dict = {
         "tools":       tools,
         "temperature": 0.3,
+        "automatic_function_calling": types.AutomaticFunctionCallingConfig(
+            maximum_remote_calls=15
+        ),
     }
     if lat is not None and lng is not None:
         config_kwargs["tool_config"] = types.ToolConfig(

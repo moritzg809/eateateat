@@ -99,7 +99,13 @@ def call_gemini(
     if website:
         tools.append(types.Tool(url_context=types.UrlContext()))
 
-    config_kwargs: dict = {"tools": tools, "temperature": 0.2}
+    config_kwargs: dict = {
+        "tools": tools,
+        "temperature": 0.2,
+        "automatic_function_calling": types.AutomaticFunctionCallingConfig(
+            maximum_remote_calls=15
+        ),
+    }
     if lat is not None and lng is not None:
         config_kwargs["tool_config"] = types.ToolConfig(
             retrieval_config=types.RetrievalConfig(
