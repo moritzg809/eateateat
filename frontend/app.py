@@ -2,6 +2,7 @@ import os
 import re
 import time as _time
 import uuid
+from urllib.parse import urlencode
 
 import numpy as np
 import psycopg2
@@ -990,6 +991,7 @@ def index():
         "type_filter": type_filter, "tag_filter": tag_filter,
         "available_types": [], "available_tags": [],
         "cuisine_filter": cuisine_filter,
+        "qs_no_cuisine": urlencode({k: v for k, v in request.args.items() if k != "cuisine_filter"}),
         "top_cuisines": [],        # list[tuple[str, int]]
         "cuisine_neighbors": {},   # dict[str, list[str]]
         "error": None,

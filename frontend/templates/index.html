@@ -187,22 +187,14 @@
 <div class="max-w-7xl mx-auto px-5 mt-3">
   <div class="flex flex-wrap gap-1.5 items-center">
     <span class="font-mono text-[10px] text-ink/30 uppercase tracking-widest shrink-0 mr-1">Küche</span>
-    {# "Alle" = remove cuisine_filter from query string #}
-    {% set qs_no_cuisine = request.query_string.decode()
-        .replace('&cuisine_filter=' ~ cuisine_filter, '')
-        .replace('cuisine_filter=' ~ cuisine_filter, '')
-        .replace('&&', '&').strip('&') %}
+    {# qs_no_cuisine comes from Python (properly URL-decoded) #}
     <a href="?{{ qs_no_cuisine }}"
        class="font-mono text-[10px] px-2.5 py-1 rounded-full border transition
               {{ 'bg-ink text-cream border-ink' if not cuisine_filter else 'border-sand text-ink/40 hover:border-ink/30 hover:text-ink/60' }}">
       Alle
     </a>
     {% for ctype, count in top_cuisines %}
-    {% set qs_base = request.query_string.decode()
-        .replace('&cuisine_filter=' ~ cuisine_filter, '')
-        .replace('cuisine_filter=' ~ cuisine_filter, '')
-        .replace('&&', '&').strip('&') %}
-    <a href="?{{ qs_base }}{% if qs_base %}&{% endif %}cuisine_filter={{ ctype | urlencode }}"
+    <a href="?{{ qs_no_cuisine }}{% if qs_no_cuisine %}&{% endif %}cuisine_filter={{ ctype | urlencode }}"
        class="font-mono text-[10px] px-2.5 py-1 rounded-full border transition
               {{ 'bg-terra text-cream border-terra' if cuisine_filter == ctype else 'border-sand text-ink/40 hover:border-terra/40 hover:text-terra' }}">
       {{ ctype }}{% if cuisine_filter == ctype and cuisine_neighbors.get(ctype) %}<span class="opacity-60 ml-0.5">+{{ cuisine_neighbors[ctype]|length }}</span>{% endif %}
