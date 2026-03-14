@@ -106,31 +106,31 @@
 <div class="bg-ink border-t border-cream/10 sticky top-0 z-30">
   <div class="max-w-7xl mx-auto px-5">
     <div class="filter-scroll flex gap-2 overflow-x-auto py-3">
-      <a href="{{ url_for('index', search=search, location=location, cuisine_filter=cuisine_filter) }}"
+      <a href="{{ url_for('index', search=search, location=location, cuisine_filter=cuisine_filter, attr_filter=attr_filter) }}"
          class="pill shrink-0 border border-cream/20 rounded-full px-4 py-1.5 font-mono text-xs text-cream/50 hover:border-cream/50 {{ 'active' if not profile_key and not view and not sort else '' }}">
         Alle
       </a>
       {% for key, emoji, label in profiles %}
-      <a href="{{ url_for('index', search=search, location=location, profile=key, min_score=min_score, cuisine_filter=cuisine_filter) }}"
+      <a href="{{ url_for('index', search=search, location=location, profile=key, min_score=min_score, cuisine_filter=cuisine_filter, attr_filter=attr_filter) }}"
          class="pill shrink-0 border border-cream/20 rounded-full px-4 py-1.5 font-mono text-xs text-cream/50 hover:border-cream/50 {{ 'active' if profile_key == key else '' }}">
         {{ emoji }}&nbsp;{{ label }}
       </a>
       {% endfor %}
       <!-- Qualitäts-Sort -->
       <span class="shrink-0 w-px bg-cream/10 mx-1"></span>
-      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, sort='quality', cuisine_filter=cuisine_filter) }}"
+      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, sort='quality', cuisine_filter=cuisine_filter, attr_filter=attr_filter) }}"
          class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
                 {{ 'border-terra bg-terra/20 text-terra' if sort == 'quality' else 'border-cream/20 text-cream/50 hover:border-terra/50 hover:text-terra/70' }}">
         ✦&nbsp;Qualität
       </a>
       <!-- Favoriten-Filter -->
       <span class="shrink-0 w-px bg-cream/10 mx-1"></span>
-      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, view='want', cuisine_filter=cuisine_filter) }}"
+      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, view='want', cuisine_filter=cuisine_filter, attr_filter=attr_filter) }}"
          class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
                 {{ 'border-terra bg-terra/20 text-terra' if view == 'want' else 'border-cream/20 text-cream/50 hover:border-terra/50 hover:text-terra/70' }}">
         🤍&nbsp;Merkliste
       </a>
-      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, view='been', cuisine_filter=cuisine_filter) }}"
+      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, view='been', cuisine_filter=cuisine_filter, attr_filter=attr_filter) }}"
          class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
                 {{ 'border-sage bg-sage/20 text-sage' if view == 'been' else 'border-cream/20 text-cream/50 hover:border-sage/50 hover:text-sage/70' }}">
         ✓&nbsp;War da
@@ -146,7 +146,7 @@
   <div class="flex items-center gap-1.5 bg-white rounded-xl px-3 py-2 shadow-sm border border-sand">
     <span class="font-mono text-[10px] text-ink/35 uppercase tracking-widest mr-1">Score ≥</span>
     {% for s in [6, 7, 8, 9] %}
-    <a href="{{ url_for('index', search=search, location=location, profile=profile_key, min_score=s, cuisine_filter=cuisine_filter) }}"
+    <a href="{{ url_for('index', search=search, location=location, profile=profile_key, min_score=s, cuisine_filter=cuisine_filter, attr_filter=attr_filter) }}"
        class="font-mono text-xs px-2.5 py-1 rounded-lg transition
               {{ 'bg-ink text-cream' if min_score == s else 'text-ink/40 hover:bg-sand' }}">
       {{ s }}
@@ -159,6 +159,7 @@
     {% if profile_key %}<input type="hidden" name="profile" value="{{ profile_key }}">{% endif %}
     {% if min_score != 7 %}<input type="hidden" name="min_score" value="{{ min_score }}">{% endif %}
     {% if cuisine_filter %}<input type="hidden" name="cuisine_filter" value="{{ cuisine_filter }}">{% endif %}
+    {% if attr_filter %}<input type="hidden" name="attr_filter" value="{{ attr_filter }}">{% endif %}
     <span class="text-ink/25 text-base">⌕</span>
     <input type="text" name="search" value="{{ search }}"
            placeholder="Restaurant suchen …"
@@ -200,6 +201,18 @@
       {{ ctype }}{% if cuisine_filter == ctype and cuisine_neighbors.get(ctype) %}<span class="opacity-60 ml-0.5">+{{ cuisine_neighbors[ctype]|length }}</span>{% endif %}
     </a>
     {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if attr_filter %}
+<div class="max-w-7xl mx-auto px-5 mt-2">
+  <div class="flex flex-wrap gap-1.5 items-center">
+    <span class="font-mono text-[10px] text-ink/30 uppercase tracking-widest shrink-0 mr-1">Attribut</span>
+    <span class="font-mono text-[10px] px-2.5 py-1 rounded-full border bg-terra/10 text-terra border-terra/30 flex items-center gap-1">
+      {{ attr_filter }}{% if attr_neighbors.get(attr_filter) %}<span class="opacity-50">+{{ attr_neighbors[attr_filter]|length }}</span>{% endif %}
+      <a href="?{{ qs_no_attr }}" class="opacity-40 hover:opacity-80 transition leading-none">×</a>
+    </span>
   </div>
 </div>
 {% endif %}
@@ -541,6 +554,7 @@
   {% if view %}{% set base_args = base_args + ['view=' ~ view] %}{% endif %}
   {% if sort %}{% set base_args = base_args + ['sort=' ~ sort] %}{% endif %}
   {% if cuisine_filter %}{% set base_args = base_args + ['cuisine_filter=' ~ cuisine_filter] %}{% endif %}
+  {% if attr_filter %}{% set base_args = base_args + ['attr_filter=' ~ attr_filter] %}{% endif %}
   {% set base_qs = base_args | join('&') %}
 
   <nav class="flex items-center justify-center gap-2 mt-10 mb-4 flex-wrap">

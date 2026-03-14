@@ -167,6 +167,7 @@ def api_remove_favorite(place_id):
 # ── Cuisine-neighbor cache (module-level, refreshed every 10 min) ────────────
 
 _CUISINE_CACHE: tuple[float, dict[str, list[str]]] | None = None
+_ATTR_CACHE:    tuple[float, dict[str, list[str]]] | None = None
 _CUISINE_CACHE_TTL = 600  # seconds
 
 
@@ -189,6 +190,22 @@ def _load_cuisine_neighbors(conn) -> dict[str, list[str]]:
     except Exception:
         result = {}
     _CUISINE_CACHE = (now, result)
+    return result
+
+
+def _load_attr_neighbors(conn) -> dict[str, list[str]]:
+    """Return {attr_value: [similar_attr, …]} from attr_neighbors table."""
+    global _ATTR_CACHE
+    now = _time.time()
+    if _ATTR_CACHE and now - _ATTR_CACHE[0] < _CUISINE_CACHE_TTL:
+        return _ATTR_CACHE[1]
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT attr_value, similar_attrs FROM attr_neighbors")
+            result = {row[0]: (row[1] or []) for row in cur.fetchall()}
+    except Exception:
+        result = {}
+    _ATTR_CACHE = (now, result)
     return result
 
 
@@ -978,7 +995,11 @@ def index():
     sort           = request.args.get("sort", "").strip()           # "" | "quality"
     type_filter    = request.args.get("type_filter", "").strip()
     tag_filter     = request.args.get("tag_filter",  "").strip()
-    cuisine_filter = request.args.get("cuisine_filter", "").strip() # cuisine_type value
+    cuisine_filter = request.args.get("cuisine_filter", "").strip()
+    attr_filter    = request.args.get("attr_filter",    "").strip()
+
+    _args_no_cuisine = {k: v for k, v in request.args.items() if k != "cuisine_filter"}
+    _args_no_attr    = {k: v for k, v in request.args.items() if k != "attr_filter"}
 
     ctx = {
         "total": 0, "top_count": 0, "avg_rating": "–", "enriched_count": 0,
@@ -991,9 +1012,12 @@ def index():
         "type_filter": type_filter, "tag_filter": tag_filter,
         "available_types": [], "available_tags": [],
         "cuisine_filter": cuisine_filter,
-        "qs_no_cuisine": urlencode({k: v for k, v in request.args.items() if k != "cuisine_filter"}),
+        "qs_no_cuisine": urlencode(_args_no_cuisine),
+        "attr_filter": attr_filter,
+        "qs_no_attr":  urlencode(_args_no_attr),
         "top_cuisines": [],        # list[tuple[str, int]]
         "cuisine_neighbors": {},   # dict[str, list[str]]
+        "attr_neighbors":    {},   # dict[str, list[str]]
         "error": None,
     }
 
@@ -1040,9 +1064,13 @@ def index():
             ctx["available_tags"] = [r["tag"] for r in cur.fetchall()]
 
             # Cuisine filter: load neighbors + top cuisine_types
-            cuisine_neighbors    = _load_cuisine_neighbors(conn)
+            cuisine_neighbors        = _load_cuisine_neighbors(conn)
             ctx["cuisine_neighbors"] = cuisine_neighbors
             ctx["top_cuisines"]      = _load_top_cuisines(conn)
+
+            # Attr filter: load neighbors
+            attr_neighbors        = _load_attr_neighbors(conn)
+            ctx["attr_neighbors"] = attr_neighbors
 
             # Build main query
             score_col  = f"{profile_key}_score" if profile_key else None
@@ -1085,6 +1113,20 @@ def index():
                 expanded_cuisines = list(explicit | word_matches)
                 conditions.append("e.cuisine_type = ANY(%(cuisine_types)s)")
                 params["cuisine_types"] = expanded_cuisines
+            if attr_filter:
+                # Expand via Jina neighbors + word-overlap across all three tag arrays
+                explicit_a = set([attr_filter] + attr_neighbors.get(attr_filter, []))
+                word_matches_a = {
+                    a for a in attr_neighbors
+                    if a not in explicit_a and _cuisine_covers(attr_filter, a, attr_neighbors)
+                }
+                expanded_attrs = list(explicit_a | word_matches_a)
+                conditions.append("""(
+                    e.cuisine_tags  && %(attrs)s OR
+                    e.interior_tags && %(attrs)s OR
+                    e.food_tags     && %(attrs)s
+                )""")
+                params["attrs"] = expanded_attrs
 
             where = " AND ".join(conditions)
             if sort == "quality":
