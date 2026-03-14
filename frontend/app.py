@@ -1074,8 +1074,13 @@ def index():
                 )
                 params["tag_filter"] = tag_filter
             if cuisine_filter:
-                # Expand filter to include semantically similar cuisine_types
-                expanded_cuisines = [cuisine_filter] + cuisine_neighbors.get(cuisine_filter, [])
+                # Expand filter: Jina neighbors + word-overlap (e.g. "Weinbar" → "Bodega & Weinbar")
+                explicit = set([cuisine_filter] + cuisine_neighbors.get(cuisine_filter, []))
+                word_matches = {
+                    ct for ct in cuisine_neighbors
+                    if ct not in explicit and _cuisine_covers(cuisine_filter, ct, cuisine_neighbors)
+                }
+                expanded_cuisines = list(explicit | word_matches)
                 conditions.append("e.cuisine_type = ANY(%(cuisine_types)s)")
                 params["cuisine_types"] = expanded_cuisines
 
