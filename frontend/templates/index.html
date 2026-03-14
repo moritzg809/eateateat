@@ -210,7 +210,7 @@
   <div class="flex flex-wrap gap-1.5 items-center">
     <span class="font-mono text-[10px] text-ink/30 uppercase tracking-widest shrink-0 mr-1">Attribut</span>
     <span class="font-mono text-[10px] px-2.5 py-1 rounded-full border bg-terra/10 text-terra border-terra/30 flex items-center gap-1">
-      {{ attr_filter }}{% if attr_neighbors.get(attr_filter) %}<span class="opacity-50">+{{ attr_neighbors[attr_filter]|length }}</span>{% endif %}
+      {{ attr_filter }}
       <a href="?{{ qs_no_attr }}" class="opacity-40 hover:opacity-80 transition leading-none">×</a>
     </span>
   </div>
