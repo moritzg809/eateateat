@@ -44,6 +44,7 @@ services:
         condition: service_healthy
     volumes:
       - ./scraper:/app
+      - hf_cache:/root/.cache/huggingface
     profiles:
       - enrich
 
@@ -76,6 +77,7 @@ services:
         condition: service_healthy
     volumes:
       - ./scraper:/app
+      - hf_cache:/root/.cache/huggingface
     profiles:
       - embed
 
@@ -95,6 +97,7 @@ services:
     volumes:
       - ./scraper:/app
       - photos:/photos
+      - hf_cache:/root/.cache/huggingface
     profiles:
       - pipeline
 
@@ -125,3 +128,4 @@ services:
 volumes:
   postgres_data:
   photos:
+  hf_cache:

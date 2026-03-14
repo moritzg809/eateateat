@@ -163,6 +163,63 @@ def api_remove_favorite(place_id):
     return jsonify({"ok": True})
 
 
+# ── Cuisine-neighbor cache (module-level, refreshed every 10 min) ────────────
+
+_CUISINE_CACHE: tuple[float, dict[str, list[str]]] | None = None
+_CUISINE_CACHE_TTL = 600  # seconds
+
+
+def _load_cuisine_neighbors(conn) -> dict[str, list[str]]:
+    """Return {cuisine_type: [similar_type, …]} from cuisine_neighbors table.
+
+    Returns an empty dict if the table doesn't exist or is empty.
+    Cached module-wide for _CUISINE_CACHE_TTL seconds.
+    """
+    global _CUISINE_CACHE
+    now = _time.time()
+    if _CUISINE_CACHE and now - _CUISINE_CACHE[0] < _CUISINE_CACHE_TTL:
+        return _CUISINE_CACHE[1]
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT cuisine_type, similar_types FROM cuisine_neighbors"
+            )
+            result = {row[0]: (row[1] or []) for row in cur.fetchall()}
+    except Exception:
+        result = {}
+    _CUISINE_CACHE = (now, result)
+    return result
+
+
+def _load_top_cuisines(conn, limit: int = 20) -> list[tuple[str, int]]:
+    """Return the top-N cuisine_types by restaurant count.
+
+    Only includes types that have an entry in cuisine_neighbors (i.e. have been
+    embedded by cuisine_embed.py). Falls back to empty list on any error.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT e.cuisine_type, COUNT(*) AS n
+                FROM top_restaurants t
+                JOIN gemini_enrichments e ON e.place_id = t.place_id
+                WHERE e.cuisine_type IS NOT NULL AND e.cuisine_type != ''
+                  AND EXISTS (
+                      SELECT 1 FROM cuisine_neighbors cn
+                      WHERE cn.cuisine_type = e.cuisine_type
+                  )
+                GROUP BY e.cuisine_type
+                ORDER BY n DESC
+                LIMIT %(limit)s
+                """,
+                {"limit": limit},
+            )
+            return [(row[0], row[1]) for row in cur.fetchall()]
+    except Exception:
+        return []
+
+
 # ── Recommender — candidate cache (module-level, refreshed every 5 min) ──────
 
 _CAND_CACHE: tuple[float, list[dict]] | None = None
@@ -741,8 +798,8 @@ def restaurant_page(place_id):
 
         if target_cand and target_cand["scores_norm"] is not None:
             ranked      = _compute_similarity(target_cand, candidates, place_id, threshold=0.45)
-            similar_ids = [pid for _, pid in ranked[:6]]
-            sim_by_id   = {pid: sim for sim, pid in ranked[:6]}
+            similar_ids = [pid for _, pid in ranked[:12]]
+            sim_by_id   = {pid: sim for sim, pid in ranked[:12]}
 
         # Fetch similar restaurant details
         similar_rows: list[dict] = []
@@ -866,15 +923,16 @@ def index():
     if new_sid:
         sid = str(uuid.uuid4())
 
-    search      = request.args.get("search", "").strip()
-    location    = request.args.get("location", "").strip()
-    profile_key = request.args.get("profile", "").strip()
-    min_score   = int(request.args.get("min_score", 7))
-    page        = max(1, int(request.args.get("page", 1) or 1))
-    view        = request.args.get("view", "").strip()   # "" | "want" | "been"
-    sort        = request.args.get("sort", "").strip()   # "" | "quality"
-    type_filter = request.args.get("type_filter", "").strip()
-    tag_filter  = request.args.get("tag_filter",  "").strip()
+    search         = request.args.get("search", "").strip()
+    location       = request.args.get("location", "").strip()
+    profile_key    = request.args.get("profile", "").strip()
+    min_score      = int(request.args.get("min_score", 7))
+    page           = max(1, int(request.args.get("page", 1) or 1))
+    view           = request.args.get("view", "").strip()           # "" | "want" | "been"
+    sort           = request.args.get("sort", "").strip()           # "" | "quality"
+    type_filter    = request.args.get("type_filter", "").strip()
+    tag_filter     = request.args.get("tag_filter",  "").strip()
+    cuisine_filter = request.args.get("cuisine_filter", "").strip() # cuisine_type value
 
     ctx = {
         "total": 0, "top_count": 0, "avg_rating": "–", "enriched_count": 0,
@@ -886,6 +944,9 @@ def index():
         "view": view, "sort": sort,
         "type_filter": type_filter, "tag_filter": tag_filter,
         "available_types": [], "available_tags": [],
+        "cuisine_filter": cuisine_filter,
+        "top_cuisines": [],        # list[tuple[str, int]]
+        "cuisine_neighbors": {},   # dict[str, list[str]]
         "error": None,
     }
 
@@ -931,13 +992,23 @@ def index():
             """)
             ctx["available_tags"] = [r["tag"] for r in cur.fetchall()]
 
+            # Cuisine filter: load neighbors + top cuisine_types
+            cuisine_neighbors    = _load_cuisine_neighbors(conn)
+            ctx["cuisine_neighbors"] = cuisine_neighbors
+            ctx["top_cuisines"]      = _load_top_cuisines(conn)
+
             # Build main query
             score_col  = f"{profile_key}_score" if profile_key else None
             conditions = ["1=1"]
             params: dict = {"sid": sid}
 
             if search:
-                conditions.append("t.name ILIKE %(search)s")
+                # Search across name, cuisine_type and summary_de
+                conditions.append("""(
+                    t.name         ILIKE %(search)s OR
+                    e.cuisine_type ILIKE %(search)s OR
+                    e.summary_de   ILIKE %(search)s
+                )""")
                 params["search"] = f"%{search}%"
             if location:
                 conditions.append("t.address ILIKE %(location)s")
@@ -957,6 +1028,11 @@ def index():
                     " OR %(tag_filter)s = ANY(COALESCE(sd.highlights,'{}')))"
                 )
                 params["tag_filter"] = tag_filter
+            if cuisine_filter:
+                # Expand filter to include semantically similar cuisine_types
+                expanded_cuisines = [cuisine_filter] + cuisine_neighbors.get(cuisine_filter, [])
+                conditions.append("e.cuisine_type = ANY(%(cuisine_types)s)")
+                params["cuisine_types"] = expanded_cuisines
 
             where = " AND ".join(conditions)
             if sort == "quality":
