@@ -191,11 +191,43 @@ def _load_cuisine_neighbors(conn) -> dict[str, list[str]]:
     return result
 
 
-def _load_top_cuisines(conn, limit: int = 20) -> list[tuple[str, int]]:
-    """Return the top-N cuisine_types by restaurant count.
+def _cuisine_words(ct: str) -> frozenset[str]:
+    """Tokenise a cuisine_type string into a frozenset of lowercase words."""
+    return frozenset(
+        w for w in ct.lower()
+        .replace("-", " ").replace("&", " ").replace(",", " ").replace("/", " ")
+        .split()
+        if len(w) > 2   # drop very short tokens like "a", "de"
+    )
 
-    Only includes types that have an entry in cuisine_neighbors (i.e. have been
-    embedded by cuisine_embed.py). Falls back to empty list on any error.
+
+def _cuisine_covers(existing: str, candidate: str, neighbors: dict) -> bool:
+    """Return True if *candidate* is semantically redundant given *existing*.
+
+    Two criteria (either is sufficient):
+    1. Explicit Jina-neighbor relationship (bidirectional).
+    2. Word-overlap: all words of the shorter token-set appear in the longer
+       → e.g. "Japanisch" ⊆ "Japanisch-Fusion", "Mediterran" ⊆ "Modern-Mediterran"
+    """
+    # Explicit neighbor check (bidirectional)
+    if candidate in neighbors.get(existing, []):
+        return True
+    if existing in neighbors.get(candidate, []):
+        return True
+    # Word-overlap heuristic
+    w1, w2 = _cuisine_words(existing), _cuisine_words(candidate)
+    if not w1 or not w2:
+        return False
+    shorter, longer = (w1, w2) if len(w1) <= len(w2) else (w2, w1)
+    return len(shorter & longer) >= len(shorter)
+
+
+def _load_top_cuisines(conn, limit: int = 20) -> list[tuple[str, int]]:
+    """Return the top-N *deduplicated* cuisine_types by restaurant count.
+
+    Fetches 5× more candidates, then greedily drops types that are
+    semantically covered by an already-selected (higher-ranked) type.
+    Falls back to empty list on any error.
     """
     try:
         with conn.cursor() as cur:
@@ -213,11 +245,24 @@ def _load_top_cuisines(conn, limit: int = 20) -> list[tuple[str, int]]:
                 ORDER BY n DESC
                 LIMIT %(limit)s
                 """,
-                {"limit": limit},
+                {"limit": limit * 5},   # fetch 5× for dedup headroom
             )
-            return [(row[0], row[1]) for row in cur.fetchall()]
+            candidates = [(row[0], row[1]) for row in cur.fetchall()]
     except Exception:
         return []
+
+    neighbors = _load_cuisine_neighbors(conn)
+
+    # Greedy deduplication: keep a type only if no already-selected type covers it
+    selected: list[tuple[str, int]] = []
+    for ctype, count in candidates:
+        if any(_cuisine_covers(sel, ctype, neighbors) for sel, _ in selected):
+            continue
+        selected.append((ctype, count))
+        if len(selected) >= limit:
+            break
+
+    return selected
 
 
 # ── Recommender — candidate cache (module-level, refreshed every 5 min) ──────
