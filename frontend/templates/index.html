@@ -90,13 +90,20 @@
             <div class="font-mono text-[10px] text-cream/35 uppercase tracking-widest mt-1">Ø Bewertung</div>
           </div>
         </div>
-        <!-- Überrasch mich Button -->
-        <a href="/restaurant/random"
-           class="flex items-center gap-2 bg-terra hover:bg-rust text-cream font-mono text-sm
-                  px-5 py-2.5 rounded-full transition-colors shadow-lg hover:shadow-xl
-                  hover:-translate-y-0.5 transition-all duration-200">
-          🎲 Überrasch mich
-        </a>
+        <!-- Action buttons -->
+        <div class="flex gap-3">
+          <a href="/discover"
+             class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
+                    px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
+            🧭 Entdecken
+          </a>
+          <a href="/restaurant/random"
+             class="flex items-center gap-2 bg-terra hover:bg-rust text-cream font-mono text-sm
+                    px-5 py-2.5 rounded-full transition-colors shadow-lg hover:shadow-xl
+                    hover:-translate-y-0.5 transition-all duration-200">
+            🎲 Überrasch mich
+          </a>
+        </div>
       </div>
     </div>
   </div>
@@ -140,7 +147,7 @@
 </div>
 
 <!-- ═══════════════════════ SEARCH + SCORE ═══════════════════════ -->
-<div class="max-w-7xl mx-auto px-5 mt-5 flex flex-wrap items-center gap-3">
+<div class="max-w-7xl mx-auto px-5 mt-5 flex flex-wrap items-center gap-3 relative">
 
   {% if profile_key %}
   <div class="flex items-center gap-1.5 bg-white rounded-xl px-3 py-2 shadow-sm border border-sand">
@@ -155,32 +162,81 @@
   </div>
   {% endif %}
 
-  <form method="get" class="flex flex-1 min-w-[200px] items-center gap-2 bg-white rounded-xl px-3 py-2 shadow-sm border border-sand">
+  <form id="search-form" method="get" class="flex flex-1 min-w-[200px] items-center gap-2 bg-white rounded-xl px-3 py-2 shadow-sm border border-sand">
     {% if profile_key %}<input type="hidden" name="profile" value="{{ profile_key }}">{% endif %}
     {% if min_score != 7 %}<input type="hidden" name="min_score" value="{{ min_score }}">{% endif %}
     {% if cuisine_filter %}<input type="hidden" name="cuisine_filter" value="{{ cuisine_filter }}">{% endif %}
     {% if attr_filter %}<input type="hidden" name="attr_filter" value="{{ attr_filter }}">{% endif %}
+    <!-- Location hidden inputs (populated by picker) -->
+    <input type="hidden" name="lat"           id="h-lat"      value="{{ loc_lat }}">
+    <input type="hidden" name="lon"           id="h-lon"      value="{{ loc_lon }}">
+    <input type="hidden" name="radius_km"     id="h-radius"   value="{{ loc_radius_km or 10 }}">
+    <input type="hidden" name="location_name" id="h-loc-name" value="{{ location_name }}">
     <span class="text-ink/25 text-base">⌕</span>
     <input type="text" name="search" value="{{ search }}"
            placeholder="Restaurant suchen …"
            class="flex-1 text-sm font-sans outline-none bg-transparent placeholder-ink/25">
-    {% if locations %}
-    <select name="location" class="text-sm font-sans text-ink/50 bg-transparent outline-none border-l border-sand pl-3">
-      <option value="">Alle Orte</option>
-      {% for loc in locations %}
-      <option value="{{ loc }}" {% if loc == location %}selected{% endif %}>{{ loc }}</option>
-      {% endfor %}
-    </select>
-    {% endif %}
+    <!-- Location trigger -->
+    <div class="relative border-l border-sand pl-3 shrink-0">
+      <button type="button" id="btn-loc-trigger" onclick="toggleLocPicker()"
+              class="font-mono text-xs whitespace-nowrap transition
+                     {% if loc_lat %}text-terra{% else %}text-ink/40 hover:text-terra{% endif %}">
+        {% if loc_lat %}📍 {{ location_name or 'Standort' }}{% else %}📍 Ort{% endif %}
+      </button>
+      {% if loc_lat %}
+      <button type="button" onclick="clearLocation()" class="ml-1 text-ink/25 hover:text-ink/60 text-xs">✕</button>
+      {% endif %}
+    </div>
     <button type="submit"
             class="bg-terra text-cream font-mono text-xs px-3 py-1.5 rounded-lg hover:bg-rust transition shrink-0">
       Los
     </button>
-    {% if search or location %}
+    {% if search or loc_lat %}
     <a href="{{ url_for('index', profile=profile_key or '', min_score=min_score) }}"
        class="text-ink/25 hover:text-ink/60 text-sm px-1">✕</a>
     {% endif %}
   </form>
+
+  <!-- Location picker panel -->
+  <div id="loc-picker" class="hidden absolute left-0 right-0 top-full mt-1 z-30 px-4">
+    <div class="bg-white rounded-2xl border border-sand shadow-lg p-4 max-w-sm mx-auto">
+      <!-- GPS -->
+      <button id="idx-btn-gps" type="button" onclick="idxUseGPS()"
+              class="w-full flex items-center justify-center gap-2
+                     bg-terra/10 hover:bg-terra/20 border border-terra/30
+                     text-terra font-mono text-sm font-medium rounded-xl py-2.5 mb-3">
+        📡 Meinen Standort verwenden
+      </button>
+      <!-- Text search -->
+      <div class="flex gap-2 mb-1">
+        <input id="idx-loc-input" type="text" placeholder="z. B. Sóller, Pollença…"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();idxSearchLocation();}"
+               class="flex-1 border border-sand rounded-xl px-3 py-2
+                      font-sans text-sm bg-white focus:outline-none focus:border-terra">
+        <button type="button" id="idx-btn-search" onclick="idxSearchLocation()"
+                class="border border-sand bg-white hover:border-terra rounded-xl px-3 py-2 font-mono text-sm">
+          🔍
+        </button>
+      </div>
+      <p id="idx-loc-error"  class="hidden font-mono text-[11px] text-rust mb-2"></p>
+      <p id="idx-loc-chosen" class="hidden font-mono text-[11px] text-terra mb-2 text-center"></p>
+      <!-- Radius -->
+      <div class="flex gap-2 mb-3">
+        <button type="button" class="idx-radius-btn flex-1 border rounded-xl py-1.5 font-mono text-xs
+                                     bg-white text-ink border-sand" data-km="5"  onclick="idxSetRadius(5)">5 km</button>
+        <button type="button" class="idx-radius-btn flex-1 border rounded-xl py-1.5 font-mono text-xs
+                                     bg-terra text-cream border-terra" data-km="10" onclick="idxSetRadius(10)">10 km</button>
+        <button type="button" class="idx-radius-btn flex-1 border rounded-xl py-1.5 font-mono text-xs
+                                     bg-white text-ink border-sand" data-km="20" onclick="idxSetRadius(20)">20 km</button>
+      </div>
+      <!-- Confirm -->
+      <button type="button" id="idx-btn-confirm" onclick="idxConfirmLocation()"
+              class="hidden w-full bg-terra hover:bg-rust text-cream font-mono text-sm
+                     font-medium py-2.5 rounded-xl transition">
+        Anwenden →
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════════════════ CUISINE FILTER ═══════════════════════ -->
@@ -779,6 +835,90 @@
       }
     }
   }
+</script>
+
+<script>
+// ── Index location picker ─────────────────────────────────────────────────────
+let _idxLat = null, _idxLon = null, _idxName = '', _idxRadius = 10;
+
+function toggleLocPicker() {
+  const p = document.getElementById('loc-picker');
+  p.classList.toggle('hidden');
+}
+
+// Close picker when clicking outside
+document.addEventListener('click', e => {
+  const picker  = document.getElementById('loc-picker');
+  const trigger = document.getElementById('btn-loc-trigger');
+  if (picker && !picker.classList.contains('hidden') &&
+      !picker.contains(e.target) && e.target !== trigger) {
+    picker.classList.add('hidden');
+  }
+});
+
+function idxSetRadius(km) {
+  _idxRadius = km;
+  document.querySelectorAll('.idx-radius-btn').forEach(b => {
+    const active = b.dataset.km == km;
+    b.classList.toggle('bg-terra',   active);
+    b.classList.toggle('text-cream', active);
+    b.classList.toggle('border-terra', active);
+    b.classList.toggle('bg-white',   !active);
+    b.classList.toggle('text-ink',   !active);
+    b.classList.toggle('border-sand', !active);
+  });
+}
+
+function _idxShowConfirm(lat, lon, name) {
+  _idxLat = lat; _idxLon = lon; _idxName = name;
+  const lbl = document.getElementById('idx-loc-chosen');
+  if (lbl) { lbl.textContent = `📍 ${name}`; lbl.classList.remove('hidden'); }
+  document.getElementById('idx-btn-confirm')?.classList.remove('hidden');
+}
+
+function idxUseGPS() {
+  const btn = document.getElementById('idx-btn-gps');
+  if (btn) { btn.textContent = '⏳ Wird geladen…'; btn.disabled = true; }
+  navigator.geolocation.getCurrentPosition(
+    pos => _idxShowConfirm(pos.coords.latitude, pos.coords.longitude, 'Dein Standort'),
+    ()  => { if (btn) { btn.textContent = '📡 Standort verwenden'; btn.disabled = false; } }
+  );
+}
+
+async function idxSearchLocation() {
+  const q = (document.getElementById('idx-loc-input')?.value || '').trim();
+  if (!q) return;
+  const btn = document.getElementById('idx-btn-search');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  const res  = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  if (btn) { btn.textContent = '🔍'; btn.disabled = false; }
+  const err = document.getElementById('idx-loc-error');
+  if (data.lat) {
+    if (err) err.classList.add('hidden');
+    _idxShowConfirm(data.lat, data.lon, data.name || q);
+  } else {
+    if (err) { err.textContent = 'Ort nicht gefunden.'; err.classList.remove('hidden'); }
+  }
+}
+
+function idxConfirmLocation() {
+  if (_idxLat === null) return;
+  document.getElementById('h-lat').value      = _idxLat;
+  document.getElementById('h-lon').value      = _idxLon;
+  document.getElementById('h-radius').value   = _idxRadius;
+  document.getElementById('h-loc-name').value = _idxName;
+  document.getElementById('loc-picker').classList.add('hidden');
+  document.getElementById('search-form').submit();
+}
+
+function clearLocation() {
+  ['h-lat','h-lon','h-radius','h-loc-name'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('search-form').submit();
+}
 </script>
 
 </body>

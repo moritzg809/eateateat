@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entdecken · MallorcaEat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #f5f0e8; }
+
+    .card-enter {
+      animation: cardIn 0.25s ease-out both;
+    }
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .opt-btn {
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    }
+    .opt-btn:active { transform: scale(0.97); }
+
+    .result-card {
+      animation: cardIn 0.2s ease-out both;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    .fade-in { animation: fadeIn 0.3s ease-out both; }
+  </style>
+</head>
+<body class="min-h-screen font-sans text-ink">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-20 bg-cream/90 backdrop-blur border-b border-sand px-4 py-3 flex items-center justify-between">
+    <a href="/" class="font-serif text-lg font-bold text-ink">MallorcaEat</a>
+    <a href="/" class="font-mono text-[11px] text-ink/40 hover:text-terra transition">← Suche</a>
+  </header>
+
+  <!-- Main -->
+  <main class="max-w-md mx-auto px-4 pb-24">
+
+    <!-- Intro (shown before start) -->
+    <div id="intro" class="pt-12 text-center">
+      <div class="text-5xl mb-4">🧭</div>
+      <h1 class="font-serif text-3xl font-bold text-ink mb-2">Finden, nicht suchen.</h1>
+      <p class="font-sans text-sm text-ink/55 leading-relaxed mb-8 max-w-xs mx-auto">
+        4 kurze Fragen — und wir zeigen dir die besten Restaurants für genau diesen Moment.
+      </p>
+      <button id="btn-start"
+              class="inline-block bg-terra text-cream font-mono text-sm font-medium
+                     px-8 py-3.5 rounded-xl hover:bg-rust transition">
+        Los geht's →
+      </button>
+    </div>
+
+    <!-- Question flow (hidden until started) -->
+    <div id="flow" class="hidden pt-6">
+
+      <!-- Progress -->
+      <div class="mb-6">
+        <div class="flex items-center justify-between mb-1.5">
+          <span id="progress-label" class="font-mono text-[10px] text-ink/40 uppercase tracking-widest"></span>
+          <span id="pool-label"     class="font-mono text-[10px] text-terra/70"></span>
+        </div>
+        <div class="h-1 bg-sand rounded-full overflow-hidden">
+          <div id="progress-bar" class="h-full bg-terra rounded-full transition-all duration-400" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- Card container -->
+      <div id="card-container"></div>
+
+    </div>
+
+  </main>
+
+<script>
+let currentCard = null;
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.getElementById('btn-start').addEventListener('click', startDiscover);
+
+async function startDiscover() {
+  document.getElementById('intro').classList.add('hidden');
+  document.getElementById('flow').classList.remove('hidden');
+
+  const res  = await fetch('/api/discover/start', { method: 'POST' });
+  currentCard = await res.json();
+  renderCard(currentCard);
+}
+
+// ── Answer ────────────────────────────────────────────────────────────────────
+async function sendAnswer(value, extra = {}) {
+  if (!currentCard) return;
+
+  document.querySelectorAll('.opt-btn, #btn-confirm-location, #btn-gps').forEach(b => b.disabled = true);
+
+  const next_index = (currentCard.card_index ?? 0) + 1;
+  const payload = { key: currentCard.key, answer: value, next_index, ...extra };
+
+  const res   = await fetch('/api/discover/answer', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+  });
+  currentCard = await res.json();
+  renderCard(currentCard);
+}
+
+// ── Location picker state ──────────────────────────────────────────────────
+let _locLat = null, _locLon = null, _locName = '', _locRadius = 10;
+
+function setRadius(km) {
+  _locRadius = km;
+  document.querySelectorAll('.radius-btn').forEach(b => {
+    b.classList.toggle('bg-terra',   b.dataset.km == km);
+    b.classList.toggle('text-cream', b.dataset.km == km);
+    b.classList.toggle('border-terra', b.dataset.km == km);
+    b.classList.toggle('bg-white',   b.dataset.km != km);
+    b.classList.toggle('text-ink',   b.dataset.km != km);
+    b.classList.toggle('border-sand', b.dataset.km != km);
+  });
+}
+
+function _showLocationConfirm(lat, lon, name) {
+  _locLat = lat; _locLon = lon; _locName = name;
+  const lbl = document.getElementById('location-chosen');
+  if (lbl) { lbl.textContent = `📍 ${name}`; lbl.classList.remove('hidden'); }
+  const btn = document.getElementById('btn-confirm-location');
+  if (btn) btn.classList.remove('hidden');
+}
+
+function useGPS() {
+  const btn = document.getElementById('btn-gps');
+  if (btn) { btn.textContent = '⏳ Wird geladen…'; btn.disabled = true; }
+  navigator.geolocation.getCurrentPosition(
+    pos => _showLocationConfirm(pos.coords.latitude, pos.coords.longitude, 'Dein Standort'),
+    ()  => { if (btn) { btn.textContent = '📡 Standort verwenden'; btn.disabled = false; } }
+  );
+}
+
+async function searchLocation() {
+  const q = (document.getElementById('location-input')?.value || '').trim();
+  if (!q) return;
+  const btn = document.getElementById('btn-search');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  const res  = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  if (btn) { btn.textContent = '🔍'; btn.disabled = false; }
+  const err = document.getElementById('location-error');
+  if (data.lat) {
+    if (err) err.classList.add('hidden');
+    _showLocationConfirm(data.lat, data.lon, data.name || q);
+  } else {
+    if (err) { err.textContent = 'Ort nicht gefunden.'; err.classList.remove('hidden'); }
+  }
+}
+
+function confirmLocation() {
+  if (_locLat === null) return;
+  sendAnswer('location', { lat: _locLat, lon: _locLon, radius_km: _locRadius, location_name: _locName });
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderCard(card) {
+  const container = document.getElementById('card-container');
+
+  if (card.type === 'question') {
+    // Progress
+    const idx   = card.card_index ?? 0;
+    const total = card.total ?? 4;
+    document.getElementById('progress-label').textContent =
+      `Frage ${idx + 1} von ${total}`;
+    document.getElementById('pool-label').textContent =
+      card.pool_size ? `~${card.pool_size.toLocaleString('de')} Restaurants` : '';
+    document.getElementById('progress-bar').style.width =
+      `${(idx / total) * 100}%`;
+
+    container.innerHTML = `<div class="card-enter">${buildQuestionCard(card)}</div>`;
+
+  } else if (card.type === 'results') {
+    // Progress — full
+    document.getElementById('progress-label').textContent = 'Fertig';
+    document.getElementById('pool-label').textContent =
+      `${card.total ?? 0} Treffer`;
+    document.getElementById('progress-bar').style.width = '100%';
+
+    container.innerHTML = buildResultsPage(card);
+  }
+}
+
+// ── Question card ─────────────────────────────────────────────────────────────
+function buildQuestionCard(card) {
+  const header = `
+    <div class="text-center mb-6">
+      <div class="text-4xl mb-3">${card.emoji}</div>
+      <h2 class="font-serif text-2xl font-bold text-ink">${card.question}</h2>
+    </div>`;
+
+  if (card.subtype === 'location_picker') {
+    // Reset location state
+    _locLat = null; _locLon = null; _locName = ''; _locRadius = 10;
+    return `
+      <div>
+        ${header}
+        <!-- GPS -->
+        <button id="btn-gps" onclick="useGPS()"
+                class="opt-btn w-full flex items-center justify-center gap-2
+                       bg-terra/10 hover:bg-terra/20 border border-terra/30
+                       text-terra font-mono text-sm font-medium
+                       rounded-2xl py-3.5 mb-4">
+          📡 Meinen Standort verwenden
+        </button>
+
+        <!-- Divider -->
+        <div class="flex items-center gap-3 mb-4">
+          <div class="h-px bg-sand flex-1"></div>
+          <span class="font-mono text-[10px] text-ink/30">oder Ort eingeben</span>
+          <div class="h-px bg-sand flex-1"></div>
+        </div>
+
+        <!-- Text search -->
+        <div class="flex gap-2 mb-1">
+          <input id="location-input" type="text" placeholder="z. B. Pollença, Sóller…"
+                 onkeydown="if(event.key==='Enter') searchLocation()"
+                 class="flex-1 border border-sand rounded-xl px-4 py-2.5
+                        font-sans text-sm bg-white focus:outline-none focus:border-terra">
+          <button id="btn-search" onclick="searchLocation()"
+                  class="opt-btn border border-sand bg-white hover:border-terra
+                         rounded-xl px-4 py-2.5 font-mono text-sm">
+            🔍
+          </button>
+        </div>
+        <p id="location-error" class="hidden font-mono text-[11px] text-rust mb-3"></p>
+
+        <!-- Chosen location label -->
+        <p id="location-chosen" class="hidden font-mono text-[11px] text-terra mb-3 text-center"></p>
+
+        <!-- Radius -->
+        <div class="flex gap-2 mb-5">
+          ${[5,10,20].map(km => `
+            <button class="radius-btn flex-1 border rounded-xl py-2 font-mono text-sm
+                           ${km === 10 ? 'bg-terra text-cream border-terra' : 'bg-white text-ink border-sand'}"
+                    data-km="${km}" onclick="setRadius(${km})">
+              ${km} km
+            </button>`).join('')}
+        </div>
+
+        <!-- Confirm (hidden until location set) -->
+        <button id="btn-confirm-location" onclick="confirmLocation()"
+                class="hidden w-full bg-terra hover:bg-rust text-cream font-mono text-sm
+                       font-medium py-3.5 rounded-xl transition mb-3">
+          Weiter →
+        </button>
+
+        <!-- Skip -->
+        <button onclick="sendAnswer('egal')"
+                class="opt-btn w-full text-center font-mono text-[11px] text-ink/40
+                       hover:text-terra py-2 transition">
+          Überall auf Mallorca
+        </button>
+      </div>`;
+  }
+
+  // Default: options grid
+  const opts = (card.options || []).map(o => `
+    <button class="opt-btn flex flex-col items-center justify-center gap-1
+                   border border-sand bg-white hover:border-terra hover:bg-terra/5
+                   rounded-2xl px-3 py-4 text-center w-full"
+            onclick="sendAnswer('${o.value}')">
+      <span class="text-2xl leading-none">${o.emoji || ''}</span>
+      <span class="font-sans text-sm font-medium text-ink leading-snug">${o.label}</span>
+      ${o.desc ? `<span class="font-mono text-[10px] text-ink/40">${o.desc}</span>` : ''}
+    </button>
+  `).join('');
+  const cols = card.options.length <= 4 ? 'grid-cols-2' : 'grid-cols-3';
+  return `<div>${header}<div class="grid ${cols} gap-3">${opts}</div></div>`;
+}
+
+// ── Results page ──────────────────────────────────────────────────────────────
+function buildResultsPage(card) {
+  const restaurants = card.restaurants || [];
+
+  if (restaurants.length === 0) {
+    return `
+      <div class="fade-in text-center py-16">
+        <div class="text-4xl mb-3">😕</div>
+        <p class="font-serif text-xl font-bold text-ink mb-2">Keine Treffer</p>
+        <p class="font-sans text-sm text-ink/50 mb-6">Versuch es mit weniger strengen Filtern.</p>
+        <button onclick="startDiscover()"
+                class="font-mono text-sm text-terra border border-terra/30 px-5 py-2.5 rounded-xl hover:bg-terra/5">
+          Nochmal →
+        </button>
+      </div>`;
+  }
+
+  const cards = restaurants.map(r => buildRestaurantCard(r)).join('');
+
+  return `
+    <div class="fade-in">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="font-serif text-xl font-bold text-ink">Deine Empfehlungen</h2>
+        <button onclick="startDiscover()"
+                class="font-mono text-[11px] text-terra/70 hover:text-terra transition">
+          Neu starten
+        </button>
+      </div>
+      <div class="flex flex-col gap-4">${cards}</div>
+    </div>
+  `;
+}
+
+function buildRestaurantCard(r) {
+  const photo = r.photo_url
+    ? `<img src="${r.photo_url}" class="w-full h-44 object-cover" loading="lazy" alt="${r.name}">`
+    : `<div class="w-full h-44 bg-sand/40 flex items-center justify-center text-4xl">🍽</div>`;
+
+  const stars   = r.rating      ? `⭐ ${r.rating.toFixed(1)}` : '';
+  const reviews = r.rating_count ? `${r.rating_count.toLocaleString('de')} Bewertungen` : '';
+  const price   = r.price_pp    ? `${r.price_pp} € p.P.` : '';
+  const meta    = [r.city, price].filter(Boolean).join(' · ');
+  const tags    = (r.tags || []).map(t =>
+    `<span class="font-mono text-[10px] bg-terra/8 text-terra/70 border border-terra/15 px-2 py-0.5 rounded-full">${t}</span>`
+  ).join('');
+
+  return `
+    <div class="result-card bg-white rounded-2xl border border-sand shadow-sm overflow-hidden">
+      <div class="overflow-hidden">${photo}</div>
+      <div class="px-4 pt-3 pb-4">
+        <div class="flex items-start justify-between gap-2 mb-0.5">
+          <h3 class="font-serif text-lg font-bold text-ink leading-snug">${r.name}</h3>
+          ${stars ? `<span class="font-mono text-sm text-ink/50 shrink-0 pt-0.5">${stars}</span>` : ''}
+        </div>
+        ${reviews ? `<p class="font-mono text-[10px] text-ink/30 mb-1.5">${reviews}</p>` : ''}
+        ${meta    ? `<p class="font-mono text-[10px] text-ink/40 mb-1.5">${meta}</p>` : ''}
+        ${r.cuisine_type ? `<p class="font-mono text-[10px] text-terra/70 mb-2">${r.cuisine_type}</p>` : ''}
+        ${tags    ? `<div class="flex flex-wrap gap-1 mb-2">${tags}</div>` : ''}
+        ${r.vibe  ? `<p class="font-sans text-xs text-ink/50 italic leading-relaxed line-clamp-2 mb-3">${r.vibe}</p>` : ''}
+        <a href="/restaurant/${r.place_id}"
+           class="inline-block font-mono text-[11px] text-terra hover:text-rust transition font-medium">
+          Details ansehen →
+        </a>
+      </div>
+    </div>
+  `;
+}
+</script>
+</body>
+</html>

@@ -1,13 +1,17 @@
+import json
+import math
 import os
 import re
 import time as _time
+import urllib.parse
+import urllib.request
 import uuid
 from urllib.parse import urlencode
 
 import numpy as np
 import psycopg2
 import psycopg2.extras
-from flask import Flask, render_template, request, jsonify, make_response, redirect
+from flask import Flask, render_template, request, jsonify, make_response, redirect, session
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mallorcaeat-dev-key")
@@ -974,6 +978,331 @@ def similar_page(place_id):
                            error=None)
 
 
+# ── Discover v2 — concrete filter funnel ─────────────────────────────────────
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+_DISCOVER_CUISINES = [
+    {"key": "mediterran",    "label": "Mediterran",          "emoji": "🌊",
+     "types": {"Modern-Mediterran","Mediterran","Mallorquinisch",
+               "Mallorquinisch-Mediterran","Modern-Mallorquinisch",
+               "Mediterran & International","Mediterrane Bar"}},
+    {"key": "cafe",          "label": "Café & Brunch",       "emoji": "☕",
+     "types": {"Café & Brunch","Mallorquinische Bäckerei"}},
+    {"key": "tapas",         "label": "Tapas & Spanisch",    "emoji": "🫒",
+     "types": {"Tapas-Bar","Spanische Tapas","Spanische Bar"}},
+    {"key": "italian",       "label": "Italienisch & Pizza", "emoji": "🍕",
+     "types": {"Italienisch","Italienisch, Pizza","Neapolitanische Pizza","Pizzeria"}},
+    {"key": "international", "label": "International",       "emoji": "🌍",
+     "types": {"Indisch","Japanisch","Modern-International","Asiatisch","Sushi",
+               "Mexikanisch","Chinesisch","Griechisch","Arabisch","Türkisch",
+               "Libanesisch","Modern International","Modern-European"}},
+    {"key": "weinbar",       "label": "Weinbar",             "emoji": "🍷",
+     "types": {"Weinbar","Weinbar & Tapas","Weinbar & Mallorquinisch",
+               "Weinbar & Regionale Küche","Weinbar & Snacks","Tapas & Weinbar",
+               "Modern-Mediterran & Weinbar","Weinbar & Cocktailbar","Weinbar & Weingut",
+               "Weinbar mit Events","Weinbar & Delikatessen","Mallorquinische Weinbar",
+               "Modern-Mediterran, Weinbar","Weinbar & Mediterrane Küche","Weinbar & Café",
+               "Bodega & Weinbar","Weinrestaurant & Modern-Mediterran",
+               "Mallorquinisch & Wein","Weingut & Weinprobe","Kleine Teller & Weinbar",
+               "Weinbar, Mallorquinisch","Weinprobe & Mallorquinisch",
+               "Weingut & Tapas","Weinhandlung & Tasting"}},
+    {"key": "bar",           "label": "Bar & Cocktails",     "emoji": "🍸",
+     "types": {"Cocktailbar","Cocktailbar & Snacks","Café & Bar","Bar & Snacks",
+               "Internationale Bar-Küche","Internationale Bar","Tapas & Cocktails",
+               "Mallorquinische Bar","Craft Beer Bar","Italienische Bar","Bar & Cocktails",
+               "Cocktailbar & Tapas","Gourmet-Bar","Cocktailbar & Barfood",
+               "Mediterran & Strandbar","Lounge & Bar Snacks","Bar",
+               "Cocktailbar & Lounge","Bar & Grill","Jazzbar & Snacks",
+               "Klassische Cocktailbar","Bar & Mediterran","Cocktailbar & Aperitivo",
+               "Bar & Café","Spanische Bar","Mediterrane Bar","Mediterrane Bar-Küche",
+               "Mediterrane Strandbar","Bar & Tapas","Tapas-Bar & Cocktails",
+               "Modern-Mediterran & Cocktails"}},
+]
+
+_DISCOVER_QUESTIONS = [
+    {
+        "key":      "location",
+        "subtype":  "location_picker",
+        "emoji":    "📍",
+        "question": "Wo auf Mallorca bist du?",
+        "options":  [],  # rendered specially in the frontend
+    },
+    {
+        "key":      "cuisine",
+        "emoji":    "🍽",
+        "question": "Was willst du essen?",
+        "options": [
+            {"value": "mediterran",    "label": "Mediterran",          "emoji": "🌊"},
+            {"value": "cafe",          "label": "Café & Brunch",       "emoji": "☕"},
+            {"value": "tapas",         "label": "Tapas & Spanisch",    "emoji": "🫒"},
+            {"value": "italian",       "label": "Italienisch & Pizza", "emoji": "🍕"},
+            {"value": "international", "label": "International",       "emoji": "🌍"},
+            {"value": "weinbar",       "label": "Weinbar",             "emoji": "🍷"},
+            {"value": "bar",           "label": "Bar & Cocktails",     "emoji": "🍸"},
+            {"value": "egal",          "label": "Egal",                "emoji": "🎲"},
+        ],
+    },
+    {
+        "key":      "budget",
+        "emoji":    "💰",
+        "question": "Was darf es kosten?",
+        "options": [
+            {"value": "cheap",  "label": "Günstig",  "emoji": "🪙", "desc": "bis 20 € p.P."},
+            {"value": "mid",    "label": "Mittel",   "emoji": "💳", "desc": "20–40 € p.P."},
+            {"value": "high",   "label": "Gehoben",  "emoji": "🥂", "desc": "40 € + p.P."},
+            {"value": "egal",   "label": "Egal",     "emoji": "🎲"},
+        ],
+    },
+    {
+        "key":      "outdoor",
+        "emoji":    "🌿",
+        "question": "Draußen sitzen oder Meerblick?",
+        "options": [
+            {"value": "yes",    "label": "Ja, unbedingt",   "emoji": "🌞"},
+            {"value": "indoor", "label": "Drinnen ist ok",  "emoji": "🏠"},
+            {"value": "egal",   "label": "Egal",            "emoji": "🎲"},
+        ],
+    },
+]
+
+
+def _discover_city(address: str) -> str | None:
+    """Extract city name from '07xxx CityName, ...' address format."""
+    import re
+    m = re.search(r"07\d{3}\s+([^,]+)", address or "")
+    return m.group(1).strip() if m else None
+
+
+def _discover_pool_size(conn, filters: dict) -> int:
+    """Count restaurants matching the current set of filters."""
+    all_rows = _discover_fetch_all(conn)
+    return len(_discover_filter(all_rows, filters))
+
+
+_DISCOVER_CACHE: tuple[float, list] | None = None
+_DISCOVER_CACHE_TTL = 300
+
+
+def _discover_fetch_all(conn) -> list[dict]:
+    global _DISCOVER_CACHE
+    import time
+    now = time.time()
+    if _DISCOVER_CACHE and now - _DISCOVER_CACHE[0] < _DISCOVER_CACHE_TTL:
+        return _DISCOVER_CACHE[1]
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("""
+            SELECT r.place_id, r.name, r.address, r.rating, r.rating_count,
+                   r.thumbnail_url, r.price_level, r.latitude, r.longitude,
+                   ge.avg_price_pp, ge.cuisine_type, ge.cuisine_tags,
+                   ge.interior_tags, ge.vibe, ge.outdoor_score, ge.view_score
+            FROM restaurants r
+            JOIN gemini_enrichments ge ON ge.place_id = r.place_id
+            WHERE r.is_active = TRUE
+            ORDER BY r.rating DESC, r.rating_count DESC NULLS LAST
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+
+    for r in rows:
+        r["city"] = _discover_city(r.get("address") or "")
+        # Cast to float so Haversine works even with Decimal types
+        if r.get("latitude"):  r["latitude"]  = float(r["latitude"])
+        if r.get("longitude"): r["longitude"] = float(r["longitude"])
+
+    _DISCOVER_CACHE = (now, rows)
+    return rows
+
+
+def _discover_filter(rows: list[dict], filters: dict) -> list[dict]:
+    result = rows
+
+    # Location — coordinate-based radius filter
+    loc = filters.get("location")
+    if loc and isinstance(loc, dict):
+        lat      = loc.get("lat")
+        lon      = loc.get("lon")
+        radius   = loc.get("radius_km", 10)
+        if lat is not None and lon is not None:
+            result = [
+                r for r in result
+                if r.get("latitude") and r.get("longitude")
+                and _haversine_km(lat, lon, r["latitude"], r["longitude"]) <= radius
+            ]
+
+    # Cuisine
+    cuisine = filters.get("cuisine")
+    if cuisine and cuisine != "egal":
+        cuisine_types = next(
+            (c["types"] for c in _DISCOVER_CUISINES if c["key"] == cuisine), set()
+        )
+        result = [r for r in result if r.get("cuisine_type") in cuisine_types]
+
+    # Budget
+    budget = filters.get("budget")
+    if budget and budget != "egal":
+        def _price_ok(r):
+            pp = r.get("avg_price_pp")
+            if pp is None:
+                return True  # include unknowns
+            if budget == "cheap":  return pp < 20
+            if budget == "mid":    return 20 <= pp <= 40
+            if budget == "high":   return pp > 40
+            return True
+        result = [r for r in result if _price_ok(r)]
+
+    # Outdoor / Meerblick
+    outdoor = filters.get("outdoor")
+    if outdoor == "yes":
+        result = [r for r in result
+                  if (r.get("outdoor_score") or 0) >= 7
+                  or (r.get("view_score") or 0) >= 7]
+    elif outdoor == "indoor":
+        result = [r for r in result
+                  if (r.get("outdoor_score") or 5) <= 5
+                  and (r.get("view_score") or 0) < 8]
+
+    return result
+
+
+def _discover_question_card(card_index: int, filters: dict, pool_size: int) -> dict:
+    q = _DISCOVER_QUESTIONS[card_index]
+    return {
+        "type":       "question",
+        "subtype":    q.get("subtype", "options"),
+        "card_index": card_index,
+        "total":      len(_DISCOVER_QUESTIONS),
+        "key":        q["key"],
+        "emoji":      q["emoji"],
+        "question":   q["question"],
+        "options":    q["options"],
+        "pool_size":  pool_size,
+    }
+
+
+def _discover_result_card(rows: list[dict]) -> dict:
+    results = []
+    for r in rows[:20]:
+        tags = (r.get("cuisine_tags") or [])[:3] + (r.get("interior_tags") or [])[:2]
+        photo = _photo_url(r["place_id"], r.get("thumbnail_url"))
+        results.append({
+            "place_id":     r["place_id"],
+            "name":         r["name"],
+            "city":         r.get("city") or "",
+            "rating":       float(r.get("rating") or 0),
+            "rating_count": r.get("rating_count") or 0,
+            "price_pp":     r.get("avg_price_pp"),
+            "cuisine_type": r.get("cuisine_type") or "",
+            "tags":         tags,
+            "vibe":         (r.get("vibe") or "")[:120],
+            "photo_url":    photo,
+        })
+    return {"type": "results", "restaurants": results, "total": len(rows)}
+
+
+@app.route("/api/geocode")
+def api_geocode():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "no query"}), 400
+    headers = {"User-Agent": "MallorcaEat/1.0", "Accept-Language": "de,en"}
+
+    def _nom_get(url):
+        r = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(r, timeout=5) as resp:
+            return json.loads(resp.read())
+
+    try:
+        # 1st try: structured city search — returns the actual settlement
+        city_q = urllib.parse.urlencode({"city": q, "countrycodes": "es",
+                                         "format": "json", "limit": 5,
+                                         "addressdetails": 1})
+        results = _nom_get(f"https://nominatim.openstreetmap.org/search?{city_q}")
+
+        # Filter to Balearic Islands results
+        baleares = [r for r in results
+                    if "Illes Balears" in r.get("display_name", "")
+                    or "Balear" in r.get("display_name", "")]
+        if not baleares:
+            baleares = results  # fallback: take whatever we get
+
+        if not baleares:
+            # 2nd try: free-text with Mallorca context
+            fq = urllib.parse.urlencode({"q": f"{q}, Mallorca", "countrycodes": "es",
+                                         "format": "json", "limit": 10})
+            all_results = _nom_get(f"https://nominatim.openstreetmap.org/search?{fq}")
+            place_types = {"city", "town", "village", "hamlet", "suburb", "municipality"}
+            baleares = [r for r in all_results if r.get("type") in place_types]
+            if not baleares:
+                baleares = all_results
+
+        if not baleares:
+            return jsonify({"error": "not found"}), 404
+
+        r = baleares[0]
+        name = r.get("display_name", "").split(",")[0].strip()
+        return jsonify({"lat": float(r["lat"]), "lon": float(r["lon"]), "name": name})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/discover")
+def discover():
+    return render_template("discover.html")
+
+
+@app.route("/api/discover/start", methods=["POST"])
+def api_discover_start():
+    conn = get_db()
+    total = len(_discover_fetch_all(conn))
+    conn.close()
+    session["discover_filters"] = {}
+    session.modified = True
+    return jsonify(_discover_question_card(0, {}, total))
+
+
+@app.route("/api/discover/answer", methods=["POST"])
+def api_discover_answer():
+    req     = request.json or {}
+    filters = session.get("discover_filters", {})
+    key     = req.get("key")
+    answer  = req.get("answer", "egal")
+
+    if key and answer != "egal":
+        if key == "location" and req.get("lat") is not None:
+            filters["location"] = {
+                "lat":       req["lat"],
+                "lon":       req["lon"],
+                "radius_km": req.get("radius_km", 10),
+                "name":      req.get("location_name", ""),
+            }
+        else:
+            filters[key] = answer
+
+    session["discover_filters"] = filters
+    session.modified = True
+
+    conn  = get_db()
+    rows  = _discover_fetch_all(conn)
+    next_index = req.get("next_index", 0)
+
+    if next_index >= len(_DISCOVER_QUESTIONS):
+        filtered = _discover_filter(rows, filters)
+        conn.close()
+        return jsonify(_discover_result_card(filtered))
+
+    pool_size = len(_discover_filter(rows, filters))
+    conn.close()
+    return jsonify(_discover_question_card(next_index, filters, pool_size))
+
+
 # ── Main view ────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -987,7 +1316,11 @@ def index():
         sid = str(uuid.uuid4())
 
     search         = request.args.get("search", "").strip()
-    location       = request.args.get("location", "").strip()
+    location       = request.args.get("location", "").strip()   # legacy city-name filter
+    loc_lat        = request.args.get("lat", "").strip()
+    loc_lon        = request.args.get("lon", "").strip()
+    loc_radius_km  = request.args.get("radius_km", "10").strip()
+    location_name  = request.args.get("location_name", "").strip()
     profile_key    = request.args.get("profile", "").strip()
     min_score      = int(request.args.get("min_score", 7))
     page           = max(1, int(request.args.get("page", 1) or 1))
@@ -1005,6 +1338,8 @@ def index():
         "total": 0, "top_count": 0, "avg_rating": "–", "enriched_count": 0,
         "restaurants": [], "locations": [],
         "search": search, "location": location,
+        "loc_lat": loc_lat, "loc_lon": loc_lon,
+        "loc_radius_km": loc_radius_km, "location_name": location_name,
         "profile_key": profile_key, "min_score": min_score,
         "profiles": PROFILES,
         "page": page, "total_pages": 1, "total_filtered": 0, "per_page": PER_PAGE,
@@ -1085,7 +1420,23 @@ def index():
                     e.summary_de   ILIKE %(search)s
                 )""")
                 params["search"] = f"%{search}%"
-            if location:
+            if loc_lat and loc_lon:
+                try:
+                    _lat = float(loc_lat); _lon = float(loc_lon)
+                    _rad = float(loc_radius_km) if loc_radius_km else 10.0
+                    cur.execute(
+                        "SELECT place_id, latitude, longitude FROM restaurants "
+                        "WHERE latitude IS NOT NULL AND longitude IS NOT NULL"
+                    )
+                    nearby_ids = [
+                        r["place_id"] for r in cur.fetchall()
+                        if _haversine_km(_lat, _lon, float(r["latitude"]), float(r["longitude"])) <= _rad
+                    ]
+                    conditions.append("t.place_id = ANY(%(nearby_ids)s)")
+                    params["nearby_ids"] = nearby_ids or ["__none__"]
+                except (ValueError, TypeError):
+                    pass
+            elif location:
                 conditions.append("t.address ILIKE %(location)s")
                 params["location"] = f"%{location.split(',')[0]}%"
             if score_col:

@@ -94,11 +94,8 @@ def download_photos(place_id: str, images: list, dry_run: bool = False) -> int:
     return count
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Backfill photos from stored raw_response")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be done, no downloads")
-    args = parser.parse_args()
-
+def run(dry_run: bool = False):
+    """Download photos for all restaurants that don't have them yet. Idempotent."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -119,14 +116,13 @@ def main():
     skipped = 0
 
     for i, (place_id, name, images) in enumerate(rows, 1):
-        # Check if photos already exist on disk
         dest_dir = os.path.join(PHOTOS_DIR, place_id)
         if os.path.isdir(dest_dir) and os.path.exists(os.path.join(dest_dir, "0.jpg")):
             already_done += 1
             continue
 
         logger.info("[%3d/%d] %s", i, total, name)
-        n = download_photos(place_id, images, dry_run=args.dry_run)
+        n = download_photos(place_id, images, dry_run=dry_run)
         if n:
             downloaded += n
         else:
@@ -155,9 +151,9 @@ def main():
         dest_dir = os.path.join(PHOTOS_DIR, place_id)
         path = os.path.join(dest_dir, "0.jpg")
         if os.path.exists(path):
-            continue  # already has photos from Pass 1 or prior run
+            continue
 
-        if args.dry_run:
+        if dry_run:
             logger.info("  DRY-RUN: would download Serper thumbnail for %s", name)
             thumb_downloaded += 1
             continue
@@ -176,6 +172,13 @@ def main():
 
     logger.info("Pass 2 done — %d Serper thumbnails downloaded, %d failed",
                 thumb_downloaded, thumb_skipped)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Backfill photos from stored raw_response")
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be done, no downloads")
+    args = parser.parse_args()
+    run(dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

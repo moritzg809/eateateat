@@ -10,7 +10,9 @@ Stages (all idempotent — safe to restart at any time):
                   Only runs when no primary candidates pending AND quota remains
                   Qualifying candidates appear in the admin review queue
   5. details      Fetch SerpAPI details for 'complete' restaurants
-  6. verify       Re-check 'complete' restaurants older than 2 years
+  6. photos       Download photos from stored SerpAPI data to disk (idempotent)
+  7. website      Crawl restaurant websites — download text + images (idempotent)
+  8. verify       Re-check 'complete' restaurants older than 2 years
 
 Usage:
     python pipeline.py                          # full run (all stages)
@@ -27,6 +29,8 @@ import time
 
 import psycopg2.extras
 
+import backfill_photos
+import website_scraper
 import critic_enrich
 import detail_scrape
 import enrich as enricher
@@ -50,7 +54,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "verify"]
+ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "verify"]
 
 # Quality thresholds (must match config)
 MIN_RATING  = 4.5
@@ -434,6 +438,16 @@ def main():
 
     if "details" in stages:
         stage_details(conn, dry_run=args.dry_run, limit=args.limit)
+
+    if "photos" in stages:
+        logger.info("[PHOTOS] Starting…")
+        backfill_photos.run(dry_run=args.dry_run)
+        logger.info("[PHOTOS] Done.")
+
+    if "website" in stages:
+        logger.info("[WEBSITE] Starting…")
+        website_scraper.run(limit=args.limit, dry_run=args.dry_run)
+        logger.info("[WEBSITE] Done.")
 
     if "verify" in stages:
         stage_verify(conn, dry_run=args.dry_run, max_age_days=args.verify_days, limit=args.limit)
