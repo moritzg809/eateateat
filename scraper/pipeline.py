@@ -12,7 +12,8 @@ Stages (all idempotent — safe to restart at any time):
   5. details      Fetch SerpAPI details for 'complete' restaurants
   6. photos       Download photos from stored SerpAPI data to disk (idempotent)
   7. website      Crawl restaurant websites — download text + images (idempotent)
-  8. verify       Re-check 'complete' restaurants older than 2 years
+  8. classify     CLIP zero-shot image classification (GOOD/UNSURE/BAD)
+  9. verify       Re-check 'complete' restaurants older than 2 years
 
 Usage:
     python pipeline.py                          # full run (all stages)
@@ -31,6 +32,7 @@ import psycopg2.extras
 
 import backfill_photos
 import website_scraper
+import image_classifier
 import critic_enrich
 import detail_scrape
 import enrich as enricher
@@ -54,7 +56,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "verify"]
+ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "verify"]
 
 # Quality thresholds (must match config)
 MIN_RATING  = 4.5
@@ -448,6 +450,11 @@ def main():
         logger.info("[WEBSITE] Starting…")
         website_scraper.run(limit=args.limit, dry_run=args.dry_run)
         logger.info("[WEBSITE] Done.")
+
+    if "classify" in stages:
+        logger.info("[CLASSIFY] Starting…")
+        image_classifier.run(limit=args.limit)
+        logger.info("[CLASSIFY] Done.")
 
     if "verify" in stages:
         stage_verify(conn, dry_run=args.dry_run, max_age_days=args.verify_days, limit=args.limit)
