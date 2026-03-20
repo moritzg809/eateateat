@@ -93,12 +93,14 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
       PHOTOS_DIR: /photos
+      WEBSITE_SCRAPES_DIR: /website_scrapes
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./scraper:/app
       - photos:/photos
+      - website_scrapes:/website_scrapes
       - hf_cache:/root/.cache/huggingface
     profiles:
       - pipeline

@@ -33,31 +33,111 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MODEL  = "gemini-2.5-flash"
+MODEL  = "gemini-3-flash-preview"
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 PROMPT_TEMPLATE = """\
-Du bist ein ehrlicher Mallorca-Insider mit hohen Ansprüchen — kein Tourismusprospekt.
+Du bist Restaurantkritiker für ein Mallorca-Insider-Magazin. Du schreibst für Menschen die wirklich \
+gutes Essen suchen und Touristenfallen hassen. Kein Marketing. Keine Werbesprache. Nur was wirklich stimmt.
 
-SCHRITT 1 — Primärquellen lesen:
+SCHRITT 1 — Quellen lesen:
 {website_section}\
-Schlage dann "{name}" ({address}) auf Google Maps nach und lies die echten Reviews.
-Nutze BEIDE Quellen — die Website verrät Konzept, Geschichte und Anspruch des Restaurants;
-Google Maps zeigt was Gäste wirklich erleben.
+Schlage "{name}" ({address}) auf Google Maps nach. Lies die Reviews — besonders die kritischen.
 
-SCHRITT 2 — Fakten notieren (intern, nicht ausgeben):
-Bevor du antwortest, halte für dich fest:
-• Küchenchef / Gründer (Name, falls bekannt)
-• Gründungsjahr oder Geschichte (falls erwähnt)
-• Küchenstil / Konzept in einem Wort
-• 2-3 Signaturgerichte mit echtem Namen
-• Was Gäste in Reviews besonders erwähnen (positiv UND negativ)
-• Wer sitzt dort typischerweise (Locals, Touristen, Alter, Anlass)
-• Uhrzeit / Tageszeit wann es voll ist
-Diese Fakten MÜSSEN in deinen Antworten auftauchen — sonst ist die Antwort wertlos.
+Notiere intern (NICHT ausgeben):
+• Küchenchef / Gründer — Name, falls bekannt
+• Gründungsjahr oder besondere Geschichte, falls erwähnt
+• 2-3 Gerichte mit echtem Namen aus Karte oder Reviews
+• Was Gäste konkret loben — nicht "gutes Essen" sondern welches Gericht, warum
+• Was Gäste konkret kritisieren
+• Wer sitzt dort wirklich: Locals 40+? Touristen? Paare? Familien mit Kindern?
+• Zu welcher Uhrzeit ist es voll / leer?
 
-Bewerte für 11 Reiseprofile (1–10, ganze Zahlen):
+Wenn du zu wenig Informationen findest um spezifisch zu sein → antworte nur mit dem Wort "None".
 
+SCHRITT 2 — Drei Texte schreiben:
+
+━━━ ABSOLUT VERBOTEN ━━━
+Folgende Phrasen und Satzmuster sind verboten — sie bedeuten generisches, wertloses Schreiben.
+Enthält einer deiner Texte eine dieser Phrasen, schreib ihn komplett neu.
+
+Verbotene Wörter/Phrasen:
+"gemütlich", "einladend", "lohnenswert", "Ein Muss", "sehr zu empfehlen",
+"kulinarisches Erlebnis", "gastronomische Reise", "ideal für", "perfekt für",
+"helles Tageslicht", "lebhafte Gespräche", "lebhafte Geräuschkulisse",
+"warme Atmosphäre", "tolle Aussicht", "Mischung aus Einheimischen und Touristen",
+"dreht sich alles um", "mehr als nur", "ein Ort an dem", "wer ... sucht",
+"angeregten Gesprächen", "anregende Gespräche"
+
+Verbotene Satzmuster (gilt auch für ähnliche Formulierungen):
+"Es ist...", "Das Restaurant bietet...", "Das Restaurant ist...",
+"[Name des Restaurants] bietet...", "[Name des Restaurants] ist...",
+"Hier findet man...", "Hier trifft man..."
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+── summary_de ──
+2-4 Sätze. Beginne mit dem was dieses Restaurant von allen anderen unterscheidet —
+Küchenchef mit Namen, Gründungsgeschichte, ungewöhnliches Konzept, konkrete Lage.
+Nutze echte Namen, echte Gerichte, echte Details aus den Quellen.
+Jeder Satz muss für genau dieses Restaurant wahr sein — kein Satz darf für 50 andere auch stimmen.
+
+NEIN: "Can Moranta ist eine traditionelle Bäckerei in Consell, die für ihre authentischen
+  mallorquinischen Backwaren bekannt ist und von Einheimischen hochgeschätzt wird."
+  → Könnte für jede Bäckerei auf der Insel stehen. Kein einziges spezifisches Detail.
+
+JA:  "Can Moranta backt seit drei Generationen in Consell — die Leinentaschen der Stammkunden
+  stehen morgens um halb acht schon vor der Tür. Coca de Patata nach Familienrezept,
+  der Ofen läuft seit 5 Uhr, mittags ist alles weg."
+
+NEIN: "De Tokio a Lima verbindet mediterrane, japanische und peruanische Einflüsse zu einer
+  avantgardistischen Küche, die auf frischen, saisonalen Produkten basiert."
+  → Marketingsprache, null Information über das echte Restaurant.
+
+JA:  "German de Bernardi kocht Nikkei in Valldemossa — Black Cod mit Misoglasur seit Eröffnung
+  auf der Karte, Pisco Sour wird an fast jedem Tisch bestellt. Reservierung nötig,
+  Fensterplatz lohnt den Aufpreis beim Buchen."
+
+── must_order ──
+1-2 Gerichte oder Getränke mit vollem Namen + ein konkreter Satz warum (Textur, Technik,
+was Gäste sagen). Keine Oberbegriffe, keine Listen ohne Kontext.
+
+NEIN: "Pulpo a la Gallega, Croquetas de Jamón"
+  → Zwei Namen ohne Kontext, könnte jede Tapas-Bar sein.
+
+NEIN: "Die Ensaimada" / "Das Fleisch" / "Die Tapas" / "Die Hausspezialitäten"
+  → Oberbegriffe, wertlos.
+
+JA:  "Sobrassada amb mel auf warmem Pan de cristal — die karamellisierte Oberfläche,
+  Süße trifft Schärfe, fast jeder Tisch bestellt es laut Reviews."
+
+JA:  "Black Cod mit Misoglasur (laut Karte 24h mariniert) — Reviewers nennen es
+  durchgehend das beste Gericht, Textur wie Butter."
+
+── vibe ──
+2-3 Sätze. Beschreib den Moment wenn man reinkommt: konkretes Licht, konkrete Geräusche,
+wer genau da sitzt, wann. Keine Wertungen. Keine generischen Beobachtungen.
+Schreib nur was für exakt dieses Restaurant stimmt — nicht für hundert andere.
+
+NEIN: "Helles Licht, lebhafte Gespräche, gemischtes Publikum, ab 20 Uhr gut besucht."
+  → Eine Aufzählung, keine Beschreibung. Gilt für jede Bar der Welt.
+
+NEIN: "Gedämpftes Licht fällt auf elegant gedeckte Tische, während leise Gespräche
+  die Geräuschkulisse bilden und Paare den Sonnenuntergang genießen."
+  → Generisches Restaurantklischee, komplett austauschbar.
+
+JA:  "Mittagsservice: Pickup-Schlange bis zur Tür, kein Sitzplatz, Backgeruch
+  durch die ganze Carrer. Oma am Tresen kennt jeden beim Namen."
+
+JA:  "Abends ab 21 Uhr kommen Paare mit Reservierung, Kerzenlicht auf Naturstein,
+  die Köche durch die offene Küche sichtbar. Der Tisch nebenan spricht Mallorquinisch."
+
+⚠️  SELBST-CHECK: Lies deine drei Texte bevor du antwortest nochmal durch.
+Enthält einer eine verbotene Phrase oder einen verbotenen Satzbeginn? → Schreib ihn neu.
+Könnte ein Satz für ein anderes Restaurant genauso stimmen? → Ersetze ihn durch etwas Spezifisches.
+
+SCHRITT 3 — Zahlen vergeben:
+
+Reiseprofile (1–10, ganze Zahlen):
 • Familie      (1=Kinder fehl am Platz, 10=Hochstühle, Spielecke, frühe Küche)
 • Date Night   (1=Neonlicht & Plastik, 10=gedimmtes Licht, Weinliste, Intimität)
 • Friends Trip (1=zu eng/laut für Gruppen, 10=große Tische, Sharing, gesellig)
@@ -67,76 +147,47 @@ Bewerte für 11 Reiseprofile (1–10, ganze Zahlen):
 • Besonderer Anlass (1=Canteen-Feeling, 10=erinnert man sich in 10 Jahren)
 • Foodie       (1=Tiefkühlware aufgewärmt, 10=Küchenchef mit Handschrift, Saisonalität)
 • Verweilen    (1=Rechnung kommt ungefragt, 10=man bleibt 4 Stunden ohne Druck)
-• Geheimtipp   (1=Reisebus wartet draußen, 10=keine Touristen, Locals sitzen hier täglich)
-• Dress Code   (1=Badeshorts & Flip-Flops okay, 3=Jeans ist ok, 7=T-Shirt ist fehl am Platz, 10=Hemd/Kleid erwartet, Jeans auffällig)
+• Geheimtipp   (1=Reisebus wartet draußen, 10=keine Touristen, Locals täglich)
+• Dress Code   (1=Badeshorts okay, 3=Jeans ist ok, 7=T-Shirt fehl am Platz, 10=Hemd/Kleid erwartet)
 
-RESTAURANTKRITIK — wie ein professioneller Restauranttester (1–10):
-• cuisine:      Kochqualität — Zutaten, Technik, Geschmack, Konsistenz (Gewicht 45 %)
+Restaurantkritik (1–10):
+• cuisine:      Kochqualität — Zutaten, Technik, Geschmack, Konsistenz (45 %)
 • service:      Professionalität, Freundlichkeit, Timing (25 %)
 • value:        Preis-Leistungs-Verhältnis (20 %)
 • ambiance:     Einrichtung, Atmosphäre, Komfort, Sauberkeit (10 %)
-• critic_score: Gesamtnote = cuisine×0.45 + service×0.25 + value×0.20 + ambiance×0.10 (gerundet auf ganze Zahl)
+• critic_score: cuisine×0.45 + service×0.25 + value×0.20 + ambiance×0.10 (gerundet)
 
-MALLORCA-KONTEXT — für Filter, nicht anzeigen (1–10):
-• outdoor:  Terrasse / Außenbereich (1=keiner, 5=einfache Terrasse, 10=traumhafte Outdoor-Fläche)
-• view:     Aussicht (1=keine, 5=schöner Blick, 10=spektakulärer Meerblick oder Sonnenuntergang)
+Mallorca-Kontext (1–10):
+• outdoor:  Außenbereich (1=keiner, 5=einfache Terrasse, 10=traumhafte Outdoor-Fläche)
+• view:     Aussicht (1=keine, 5=schöner Blick, 10=spektakulärer Meerblick)
 
-ZIELGRUPPE — intern, nicht anzeigen (1–10):
-• scene:     Gesehen-werden-Faktor (10=reine Scene/Instagram-Restaurant, 1=unauffällig)
+Zielgruppe (1–10):
+• scene:     Gesehen-werden-Faktor (10=reines Instagram-Restaurant, 1=unauffällig)
 • local:     Einheimische vs. Touristen (10=fast nur Locals, 1=reine Touristenfalle)
 • warmth:    Herzlichkeit (10=jeder willkommen, 1=einschüchternd exklusiv)
 • substance: Qualität vor Image (10=pure Substanz, 1=Style über Inhalt)
-• audience_type: Eine Kategorie: "scene"|"gourmet"|"local"|"family"|"tourist"|"business"|"mixed"
+• audience_type: "scene"|"gourmet"|"local"|"family"|"tourist"|"business"|"mixed"
 
-PREIS — intern, nicht anzeigen:
-• avg_price_pp: Durchschnittlicher Preis pro Person in Euro als ganze Zahl (nur Essen, ohne Getränke)
+Preis:
+• avg_price_pp: Durchschnitt pro Person in Euro, nur Essen ohne Getränke
 
-KÜCHE — intern, für künftige Filter:
-• cuisine_type: Küchenbezeichnung auf DEUTSCH, max. 3 Wörter (z.B. "Mallorquinisch", "Modern-Mediterran", "Tapas-Bar", "Cocktailbar", "Japanisch-Peruanisch", "Café & Brunch", "Weinbar", "Patisserie")
-• cuisine_tags: Die 5 charakteristischsten Schlagworte zu Gerichten/Zutaten/Getränken als Array (z.B. ["Tumbet", "Sobrasada", "Pa amb oli", "Ensaimada", "Cava"])
+Küche:
+• cuisine_type: auf DEUTSCH, max. 3 Wörter ("Mallorquinisch", "Modern-Mediterran", "Tapas-Bar", "Café & Brunch", "Weinbar")
+• cuisine_tags: 5 charakteristischste Schlagworte zu Gerichten/Zutaten/Getränken
 
-OPTIK & STIL — intern, ehrliche Bestandsaufnahme für künftige Filter:
-Bewerte kritisch und realistisch — nenne auch Schwächen. Nicht jedes Restaurant ist schön oder gut angerichtet.
-• interior_tags: Die 5 ehrlichsten Schlagworte zu Einrichtung und Atmosphäre als Array.
-  Positiv-Beispiele: "Gewölbekeller", "Rooftop-Terrasse", "Rustikale Finca", "Marmor & Messing", "Kerzenschein"
-  Negativ-Beispiele: "Plastikstühle", "Neonlicht", "Touristenfalle-Deko", "Beengt & laut", "Veraltete Einrichtung", "Ikea-Feeling"
-• food_tags: Die 5 ehrlichsten Schlagworte zur Speisen-Optik und Präsentation als Array.
-  Positiv-Beispiele: "Fine-Dining-Plating", "Farbenfroh & frisch", "Üppige Portionen", "Handgemacht-Optik"
-  Negativ-Beispiele: "Lieblos angerichtet", "Fertigware-Optik", "Zu kleine Portionen", "Einheitsbrei", "Touristenportion"
-
-VERBOTEN — diese Phrasen kennzeichnen schlechtes Schreiben, verwende sie nie:
-"Ein Muss", "sehr zu empfehlen", "lohnenswert", "einladend", "gemütlich",
-"kulinarisches Erlebnis", "gastronomische Reise", "ideal für", "perfekt für",
-"dreht sich alles um", "mehr als nur", "ein Ort an dem", "wer ... sucht",
-"helles Tageslicht", "lebhafte Gespräche", "lebhafte Geräuschkulisse",
-"Mischung aus Einheimischen und Touristen", "warme Atmosphäre", "tolle Aussicht",
-Sätze die mit "Es ist...", "Das Restaurant bietet...", "Das Restaurant ist..." beginnen
-
-Wenn du dir nicht sicher bist antworte mit "None" - Das heist aber dass es nicht angezeigt werden wird
-
-Für die drei Textfelder gilt:
-
-summary_de — 2-4 Sätze, keine starre Struktur, aber konkret und spezifisch:
-  Beginne mit dem was dieses Restaurant einzigartig macht — Küchenchef, Gründungsgeschichte, Konzept, Lage.
-  Wenn Website oder Reviews einen Namen, ein Gründungsjahr, eine Geschichte nennen — nutze sie.
-  Danach: was passiert dort wirklich, wer sitzt da, was fällt auf.
-  Jeder Satz muss nur für dieses Restaurant wahr sein — kein Satz darf für 50 andere Restaurants genauso gelten.
-  Beispiel: "Küchenchef Andreu Genestra kocht hyperregionale Mallorquiner Küche in einer alten Finca bei
-  Capdepera — Degustationsmenü ab 85€, Gemüse aus eigenem Garten. An den Tischen sitzen fast nur
-  Mallorquiner, die Frau vom Chef erklärt jeden Gang auf Katalanisch, das Brot kommt warm aus dem Holzofen.
-  Reservierung Monate im Voraus, trotzdem fühlt sich kein Tisch gehetzt an."
-
-must_order — 1-2 konkrete Gerichte/Getränke mit vollem Namen aus den Reviews oder der Karte, keine Oberbegriffe.
-  Beispiel GUT: "Sobrassada amb mel (auf warmem Pan de cristal), dazu ein Glas José L. Ferrer Blanc de Blancs"
-  Beispiel SCHLECHT: "Die Tapas" / "Die Hausspezialitäten" / "das Fleisch"
-
-vibe — Beschreibe in 1-3 Sätzen wie es sich dort anfühlt. Kein vorgegebenes Schema — schreib was einen wirklich
-  trifft wenn man reinkommt: das Licht, die Geräusche, wer da sitzt, zu welcher Uhrzeit, welche Energie im Raum ist.
-  Keine Wertungen ("schön", "toll", "gemütlich"). Keine generischen Beobachtungen.
-  Was du schreibst muss für genau dieses Restaurant stimmen — und sich von allen anderen unterscheiden.
+Optik & Stil — ehrlich, auch Schwächen nennen:
+• interior_tags: 5 ehrlichste Schlagworte zu Einrichtung/Atmosphäre
+  Positiv: "Gewölbekeller", "Rooftop-Terrasse", "Rustikale Finca", "Marmor & Messing", "Kerzenschein"
+  Negativ: "Plastikstühle", "Neonlicht", "Touristenfalle-Deko", "Beengt & laut", "Ikea-Feeling"
+• food_tags: 5 ehrlichste Schlagworte zur Speisen-Optik
+  Positiv: "Fine-Dining-Plating", "Farbenfroh & frisch", "Üppige Portionen", "Handgemacht-Optik"
+  Negativ: "Lieblos angerichtet", "Fertigware-Optik", "Zu kleine Portionen", "Touristenportion"
 
 Antworte AUSSCHLIESSLICH mit diesem JSON (kein Markdown, kein Text davor/danach):
 {{
+  "summary_de":   "<2-4 Sätze, spezifisch, kein generischer Satz>",
+  "must_order":   "<1-2 echte Gerichte mit Namen + warum>",
+  "vibe":         "<2-3 Sätze: konkretes Licht, konkrete Gäste, konkrete Uhrzeit>",
   "family":       <int>,
   "date":         <int>,
   "friends":      <int>,
@@ -161,13 +212,10 @@ Antworte AUSSCHLIESSLICH mit diesem JSON (kein Markdown, kein Text davor/danach)
   "substance":    <int>,
   "audience_type": "<scene|gourmet|local|family|tourist|business|mixed>",
   "avg_price_pp": <int>,
-  "cuisine_type": "<z.B. Mallorquinisch, Modern-Mediterran, Tapas-Bar>",
+  "cuisine_type": "<z.B. Mallorquinisch>",
   "cuisine_tags":  ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"],
   "interior_tags": ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"],
-  "food_tags":     ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"],
-  "summary_de":   "<2 Sätze, konkret, nur für dieses Restaurant wahr>",
-  "must_order":   "<1-2 echte Gerichte/Getränke mit Namen>",
-  "vibe":         "<1 Satz: Licht, Lautstärke, konkrete Gäste, Uhrzeit>"
+  "food_tags":     ["<tag1>", "<tag2>", "<tag3>", "<tag4>", "<tag5>"]
 }}"""
 
 # ---------------------------------------------------------------------------
@@ -218,7 +266,8 @@ def call_gemini(name: str, address: str, lat=None, lng=None, website: str | None
     # Build config — lat/lng is optional
     config_kwargs: dict = {
         "tools":       tools,
-        "temperature": 0.3,
+        "temperature": 1.0,  # required for thinking mode
+        "thinking_config": types.ThinkingConfig(thinking_level="low"),
         "automatic_function_calling": types.AutomaticFunctionCallingConfig(
             maximum_remote_calls=15
         ),
@@ -423,7 +472,7 @@ def run(limit=None, min_rating=4.5, min_reviews=100, dry_run=False, force=False,
     total = len(rows)
 
     logger.info("=" * 60)
-    logger.info("mallorcaeat enricher — Gemini Maps Grounding")
+    logger.info("mallorcaeat enricher — Gemini Maps Grounding + Thinking")
     logger.info("  model        : %s", MODEL)
     logger.info("  pending      : %d", total)
     logger.info("  today so far : %d / %d daily limit", today_count, daily_limit)

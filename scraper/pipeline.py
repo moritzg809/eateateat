@@ -33,6 +33,7 @@ import psycopg2.extras
 import backfill_photos
 import website_scraper
 import image_classifier
+import promote_photos
 import critic_enrich
 import detail_scrape
 import enrich as enricher
@@ -56,7 +57,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "verify"]
+ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "promote", "verify"]
 
 # Quality thresholds (must match config)
 MIN_RATING  = 4.5
@@ -455,6 +456,11 @@ def main():
         logger.info("[CLASSIFY] Starting…")
         image_classifier.run(limit=args.limit)
         logger.info("[CLASSIFY] Done.")
+
+    if "promote" in stages:
+        logger.info("[PROMOTE] Starting…")
+        promote_photos.run(dry_run=args.dry_run)
+        logger.info("[PROMOTE] Done.")
 
     if "verify" in stages:
         stage_verify(conn, dry_run=args.dry_run, max_age_days=args.verify_days, limit=args.limit)
