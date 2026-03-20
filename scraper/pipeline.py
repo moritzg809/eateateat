@@ -35,6 +35,7 @@ import website_scraper
 import image_classifier
 import promote_photos
 import critic_enrich
+import compute_curation_score
 import detail_scrape
 import enrich as enricher
 import gem_qualify
@@ -57,7 +58,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "promote", "verify"]
+ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "promote", "curation", "verify"]
 
 # Quality thresholds (must match config)
 MIN_RATING  = 4.5
@@ -308,6 +309,17 @@ def stage_details(conn, dry_run: bool = False, limit=None):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Stage: Curation Score
+# ─────────────────────────────────────────────────────────────────────────────
+
+def stage_curation(dry_run: bool = False):
+    """Recompute curation_score for all complete restaurants."""
+    logger.info("[CURATION] Computing curation scores…")
+    compute_curation_score.run(dry_run=dry_run)
+    logger.info("[CURATION] Done.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Stage 6: Verify
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -461,6 +473,9 @@ def main():
         logger.info("[PROMOTE] Starting…")
         promote_photos.run(dry_run=args.dry_run)
         logger.info("[PROMOTE] Done.")
+
+    if "curation" in stages:
+        stage_curation(dry_run=args.dry_run)
 
     if "verify" in stages:
         stage_verify(conn, dry_run=args.dry_run, max_age_days=args.verify_days, limit=args.limit)

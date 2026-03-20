@@ -1508,7 +1508,7 @@ def index():
             elif score_col:
                 order = f"e.{score_col} DESC, t.rating DESC"
             else:
-                order = "t.rating DESC, t.rating_count DESC"
+                order = "e.curation_score DESC NULLS LAST, t.rating DESC"
 
             # Count total matching rows for pagination (no quality CTE needed)
             cur.execute(f"""
