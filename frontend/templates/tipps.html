@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unsere Tipps · MallorcaEat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #f5f0e8; }
+    .article-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+    .article-card:hover { transform: translateY(-3px); box-shadow: 0 8px 28px rgba(15,14,13,0.13); }
+    .article-card img { transition: transform 0.4s ease; }
+    .article-card:hover img { transform: scale(1.04); }
+  </style>
+</head>
+<body class="min-h-screen font-sans text-ink">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-20 bg-cream/90 backdrop-blur border-b border-sand px-4 py-3 flex items-center gap-6">
+    <a href="/" class="font-serif text-lg font-bold text-ink">MallorcaEat</a>
+    <nav class="flex gap-5 items-center ml-2">
+      <a href="/"        class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Suche</a>
+      <a href="/tipps"   class="font-mono text-[11px] text-terra font-medium border-b border-terra pb-0.5">Tipps</a>
+      <a href="/discover" class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Entdecken</a>
+    </nav>
+  </header>
+
+  <!-- Hero -->
+  <div class="max-w-5xl mx-auto px-4 pt-14 pb-8 text-center">
+    <p class="font-mono text-[11px] text-terra tracking-widest uppercase mb-3">Redaktion</p>
+    <h1 class="font-serif text-4xl lg:text-5xl font-bold text-ink mb-4">Unsere Tipps</h1>
+    <p class="font-sans text-base text-ink/55 max-w-xl mx-auto leading-relaxed">
+      Sorgfältig ausgewählte Restaurants, über die wir ausführlich geschrieben haben —
+      weil sie eine Geschichte zu erzählen haben.
+    </p>
+  </div>
+
+  <!-- Article Grid -->
+  <main class="max-w-5xl mx-auto px-4 pb-20">
+
+    {% if not articles %}
+    <div class="text-center py-20 text-ink/40 font-mono text-sm">
+      Noch keine Artikel veröffentlicht.
+    </div>
+    {% else %}
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {% for a in articles %}
+      <a href="/tipps/{{ a.slug }}" class="article-card block bg-white rounded-2xl overflow-hidden border border-sand/60 no-underline">
+
+        <!-- Photo -->
+        <div class="overflow-hidden h-52 bg-sand/40">
+          {% if a.photo %}
+          <img src="{{ a.photo }}" alt="{{ a.name }}"
+               class="w-full h-full object-cover"
+               loading="lazy">
+          {% else %}
+          <div class="w-full h-full flex items-center justify-center text-4xl text-ink/20">🍽</div>
+          {% endif %}
+        </div>
+
+        <!-- Content -->
+        <div class="p-5">
+          <!-- Meta -->
+          <div class="flex items-center gap-2 mb-2">
+            <span class="font-mono text-[10px] text-terra uppercase tracking-wider">★ Unser Tipp</span>
+            {% if a.cuisine_type %}
+            <span class="font-mono text-[10px] text-ink/35">· {{ a.cuisine_type }}</span>
+            {% endif %}
+          </div>
+
+          <!-- Title -->
+          <h2 class="font-serif text-lg font-bold text-ink leading-snug mb-2 line-clamp-2">
+            {{ a.title }}
+          </h2>
+
+          <!-- Teaser -->
+          {% if a.teaser %}
+          <p class="font-sans text-sm text-ink/55 leading-relaxed line-clamp-3 mb-3">
+            {{ a.teaser }}
+          </p>
+          {% endif %}
+
+          <!-- Restaurant info -->
+          <div class="flex items-center justify-between pt-3 border-t border-sand/60">
+            <div>
+              <p class="font-sans text-xs font-medium text-ink">{{ a.name }}</p>
+              <p class="font-mono text-[10px] text-ink/40">{{ a.city }}{% if a.avg_price_pp %} · €{{ a.avg_price_pp | int }} p.P.{% endif %}</p>
+            </div>
+            {% if a.rating %}
+            <div class="flex items-center gap-1">
+              <span class="font-mono text-xs font-medium text-ink">{{ "%.1f"|format(a.rating) }}</span>
+              <span class="text-terra text-xs">★</span>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+      </a>
+      {% endfor %}
+    </div>
+
+    {% endif %}
+  </main>
+
+</body>
+</html>

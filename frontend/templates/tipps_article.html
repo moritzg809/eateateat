@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ a.title }} · MallorcaEat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #f5f0e8; }
+
+    /* Article typography */
+    .article-body h1 { display: none; } /* Title is shown separately */
+    .article-body h2 {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #0f0e0d;
+      margin: 2rem 0 0.6rem;
+    }
+    .article-body h3 {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #0f0e0d;
+      margin: 1.5rem 0 0.5rem;
+    }
+    .article-body p {
+      font-size: 0.975rem;
+      line-height: 1.8;
+      color: #0f0e0d;
+      margin-bottom: 1.1rem;
+    }
+    .article-body ul, .article-body ol {
+      margin: 0.5rem 0 1.1rem 1.2rem;
+    }
+    .article-body li {
+      font-size: 0.95rem;
+      line-height: 1.75;
+      color: #0f0e0d;
+      margin-bottom: 0.3rem;
+    }
+    .article-body strong { color: #0f0e0d; }
+    .article-body em { color: #0f0e0d; }
+    .article-body blockquote {
+      border-left: 3px solid #c4622d;
+      padding-left: 1rem;
+      margin: 1.25rem 0;
+      font-style: italic;
+      color: #0f0e0d;
+      opacity: 0.75;
+    }
+
+    /* Photo carousel */
+    .carousel-inner { scroll-behavior: smooth; }
+    .more-card { transition: transform 0.15s ease; }
+    .more-card:hover { transform: translateY(-2px); }
+  </style>
+</head>
+<body class="min-h-screen font-sans text-ink">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-20 bg-cream/90 backdrop-blur border-b border-sand px-4 py-3 flex items-center gap-6">
+    <a href="/" class="font-serif text-lg font-bold text-ink">MallorcaEat</a>
+    <nav class="flex gap-5 items-center ml-2">
+      <a href="/"         class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Suche</a>
+      <a href="/tipps"    class="font-mono text-[11px] text-terra font-medium border-b border-terra pb-0.5">Tipps</a>
+      <a href="/discover" class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Entdecken</a>
+    </nav>
+  </header>
+
+  <!-- Hero Photo -->
+  {% if a.photos %}
+  <div class="w-full h-72 lg:h-96 overflow-hidden bg-sand/40">
+    <img src="{{ a.photos[0] }}"
+         alt="{{ a.name }}"
+         class="w-full h-full object-cover">
+  </div>
+  {% endif %}
+
+  <!-- Main Layout -->
+  <div class="max-w-5xl mx-auto px-4 py-10 lg:grid lg:grid-cols-5 lg:gap-12">
+
+    <!-- Article (3/5) -->
+    <article class="lg:col-span-3">
+
+      <!-- Breadcrumb -->
+      <div class="flex items-center gap-2 mb-6">
+        <a href="/tipps" class="font-mono text-[11px] text-terra hover:text-rust transition">← Alle Tipps</a>
+        <span class="font-mono text-[11px] text-ink/30">/</span>
+        <span class="font-mono text-[11px] text-ink/40">{{ a.name }}</span>
+      </div>
+
+      <!-- Label -->
+      <p class="font-mono text-[11px] text-terra tracking-widest uppercase mb-3">★ Unser Tipp</p>
+
+      <!-- Title -->
+      <h1 class="font-serif text-3xl lg:text-4xl font-bold text-ink leading-tight mb-6">
+        {{ a.title }}
+      </h1>
+
+      <!-- Meta bar -->
+      <div class="flex flex-wrap gap-3 items-center mb-8 pb-6 border-b border-sand">
+        {% if a.cuisine_type %}
+        <span class="font-mono text-[10px] bg-sand text-ink/60 px-2.5 py-1 rounded-full">{{ a.cuisine_type }}</span>
+        {% endif %}
+        {% if a.city %}
+        <span class="font-mono text-[10px] bg-sand text-ink/60 px-2.5 py-1 rounded-full">{{ a.city }}, Mallorca</span>
+        {% endif %}
+        {% if a.avg_price_pp %}
+        <span class="font-mono text-[10px] bg-sand text-ink/60 px-2.5 py-1 rounded-full">€{{ a.avg_price_pp | int }} p.P.</span>
+        {% endif %}
+      </div>
+
+      <!-- Article Body -->
+      <div class="article-body">
+        {{ a.article_html | safe }}
+      </div>
+
+      <!-- Photo Strip (additional photos) -->
+      {% if a.photos | length > 1 %}
+      <div class="mt-10 mb-2">
+        <p class="font-mono text-[10px] text-ink/40 uppercase tracking-wider mb-3">Impressionen</p>
+        <div class="flex gap-3 overflow-x-auto pb-2 carousel-inner">
+          {% for photo in a.photos[1:6] %}
+          <img src="{{ photo }}" alt="{{ a.name }}"
+               class="h-36 w-52 object-cover rounded-xl flex-shrink-0 cursor-pointer"
+               onclick="openLightbox({{ loop.index }})"
+               loading="lazy">
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    </article>
+
+    <!-- Sidebar (2/5) -->
+    <aside class="lg:col-span-2 mt-10 lg:mt-0">
+
+      <!-- Restaurant Card -->
+      <div class="bg-white rounded-2xl border border-sand/60 p-5 sticky top-20">
+
+        <!-- Photo thumb -->
+        {% if a.photos %}
+        <div class="h-40 rounded-xl overflow-hidden mb-4 bg-sand/30">
+          <img src="{{ a.photos[0] }}" alt="{{ a.name }}" class="w-full h-full object-cover">
+        </div>
+        {% endif %}
+
+        <h2 class="font-serif text-xl font-bold text-ink mb-0.5">{{ a.name }}</h2>
+        <p class="font-mono text-[11px] text-ink/45 mb-3">{{ a.city }}{% if a.cuisine_type %} · {{ a.cuisine_type }}{% endif %}</p>
+
+        {% if a.rating %}
+        <div class="flex items-center gap-2 mb-4">
+          <span class="font-mono text-sm font-medium text-ink">{{ "%.1f"|format(a.rating) }}</span>
+          <span class="text-terra">★</span>
+          <span class="font-mono text-[10px] text-ink/40">({{ a.rating_count | default(0) }})</span>
+        </div>
+        {% endif %}
+
+        {% if a.vibe %}
+        <p class="font-sans text-xs italic text-ink/55 leading-relaxed mb-4 border-l-2 border-terra/40 pl-3">
+          „{{ a.vibe }}"
+        </p>
+        {% endif %}
+
+        <div class="space-y-2 mb-4 text-xs font-mono text-ink/55">
+          {% if a.address %}
+          <div class="flex gap-2">
+            <span>📍</span>
+            <span>{{ a.address }}</span>
+          </div>
+          {% endif %}
+          {% if a.phone %}
+          <div class="flex gap-2">
+            <span>📞</span>
+            <a href="tel:{{ a.phone }}" class="hover:text-terra transition">{{ a.phone }}</a>
+          </div>
+          {% endif %}
+          {% if a.website %}
+          <div class="flex gap-2">
+            <span>🌐</span>
+            <a href="{{ a.website }}" target="_blank" rel="noopener"
+               class="hover:text-terra transition truncate">Website</a>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- CTA -->
+        <a href="/restaurant/{{ a.place_id }}"
+           class="block w-full text-center bg-terra text-cream font-mono text-xs font-medium
+                  py-2.5 rounded-xl hover:bg-rust transition">
+          Zum Restaurant →
+        </a>
+
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- More Articles -->
+  {% if a.more %}
+  <section class="max-w-5xl mx-auto px-4 pb-16">
+    <div class="border-t border-sand pt-10">
+      <h3 class="font-serif text-xl font-bold text-ink mb-6">Mehr Tipps</h3>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        {% for m in a.more %}
+        <a href="/tipps/{{ m.slug }}"
+           class="more-card block bg-white rounded-xl overflow-hidden border border-sand/60 no-underline">
+          <div class="h-36 overflow-hidden bg-sand/30">
+            {% if m.photo %}
+            <img src="{{ m.photo }}" alt="{{ m.name }}"
+                 class="w-full h-full object-cover" loading="lazy">
+            {% endif %}
+          </div>
+          <div class="p-4">
+            <p class="font-mono text-[10px] text-terra mb-1">★ Unser Tipp</p>
+            <h4 class="font-serif text-sm font-bold text-ink leading-snug line-clamp-2 mb-1">{{ m.title }}</h4>
+            <p class="font-mono text-[10px] text-ink/40">{{ m.name }} · {{ m.city }}</p>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- Lightbox -->
+  {% if a.photos | length > 1 %}
+  <div id="lightbox" class="fixed inset-0 z-50 bg-ink/90 hidden items-center justify-center" onclick="closeLightbox()">
+    <button class="absolute top-4 right-5 text-cream/60 hover:text-cream text-2xl font-mono" onclick="closeLightbox()">✕</button>
+    <img id="lb-img" src="" class="max-h-[90vh] max-w-[90vw] rounded-xl object-contain">
+  </div>
+  <script>
+    const photos = {{ a.photos[1:6] | tojson }};
+    function openLightbox(i) {
+      document.getElementById('lb-img').src = photos[i - 1];
+      document.getElementById('lightbox').classList.remove('hidden');
+      document.getElementById('lightbox').classList.add('flex');
+    }
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.add('hidden');
+      document.getElementById('lightbox').classList.remove('flex');
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+  </script>
+  {% endif %}
+
+</body>
+</html>

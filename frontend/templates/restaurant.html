@@ -122,6 +122,13 @@
       🎲 Überrasch mich
     </a>
 
+    <a href="/tipps"
+       class="shrink-0 hidden sm:flex items-center gap-1.5 font-mono text-[10px] text-terra/70
+              hover:text-terra transition-colors border border-terra/20 hover:border-terra/50
+              rounded-full px-3 py-1.5">
+      ★ Tipps
+    </a>
+
     <a href="/" class="ml-1 font-mono text-[10px] text-cream/25 hover:text-cream/60 transition-colors shrink-0 uppercase tracking-widest">
       MallorcaEat
     </a>
@@ -286,6 +293,26 @@
       <div>
         <p class="font-mono text-[10px] uppercase tracking-widest text-terra/60 mb-1">Unbedingt probieren</p>
         <p class="font-sans text-sm text-ink/70 leading-snug">{{ r.must_order }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- ── UNSER TIPP (Editorial Article) ────────────────────────────────── -->
+    {% if article %}
+    <div class="mt-6 border border-terra/20 rounded-2xl overflow-hidden bg-terra/[0.03]">
+      <div class="px-5 pt-5 pb-1">
+        <p class="font-mono text-[10px] uppercase tracking-widest text-terra mb-2">★ Unser Tipp</p>
+        <h3 class="font-serif text-lg font-bold text-ink leading-snug mb-3">{{ article.title }}</h3>
+        <div class="font-sans text-sm text-ink/65 leading-relaxed space-y-2 article-preview">
+          {{ article.preview_html | safe }}
+        </div>
+      </div>
+      <div class="px-5 py-4">
+        <a href="/tipps/{{ article.slug }}"
+           class="inline-flex items-center gap-1.5 font-mono text-xs text-terra hover:text-rust transition font-medium">
+          Vollständigen Artikel lesen
+          <span>→</span>
+        </a>
       </div>
     </div>
     {% endif %}

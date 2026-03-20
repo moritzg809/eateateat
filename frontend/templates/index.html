@@ -92,6 +92,11 @@
         </div>
         <!-- Action buttons -->
         <div class="flex gap-3">
+          <a href="/tipps"
+             class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
+                    px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
+            ★ Tipps
+          </a>
           <a href="/discover"
              class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
                     px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
@@ -402,6 +407,17 @@
           <span data-fav-score class="hidden bg-sage text-cream font-mono text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center shadow-md"></span>
           {% endif %}
         </div>
+
+        <!-- Unser Tipp Badge (top-right) -->
+        {% if r.has_article %}
+        <div class="absolute top-2 right-2 z-20" onclick="event.stopPropagation()">
+          <a href="/tipps/{{ r.article_slug }}"
+             class="flex items-center gap-1 bg-terra text-cream font-mono text-[9px] font-medium
+                    px-2 py-1 rounded-full shadow-md hover:bg-rust transition whitespace-nowrap">
+            ★ Unser Tipp
+          </a>
+        </div>
+        {% endif %}
 
         {% if r.photos %}
         <!-- Photo strip: all images in a flex row, JS moves translateX -->

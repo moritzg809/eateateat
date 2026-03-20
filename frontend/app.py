@@ -8,6 +8,7 @@ import urllib.request
 import uuid
 from urllib.parse import urlencode
 
+import markdown2
 import numpy as np
 import psycopg2
 import psycopg2.extras
@@ -762,12 +763,19 @@ def _enrich_row(r: dict) -> dict:
     photo_dir = os.path.join(PHOTOS_DIR, r["place_id"])
     photos: list[str] = []
     if os.path.isdir(photo_dir):
+        # SerpAPI photos: 0.jpg, 1.jpg, …
         for i in range(MAX_PHOTOS):
             path = os.path.join(photo_dir, f"{i}.jpg")
             if os.path.exists(path):
                 photos.append(f"/static/photos/{r['place_id']}/{i}.jpg")
             else:
                 break
+        # Website scraper photos: 0_websiteScraper.jpg, 1_websiteScraper.jpg, …
+        ws_files = sorted(
+            f for f in os.listdir(photo_dir) if f.endswith("_websiteScraper.jpg")
+        )
+        for f in ws_files:
+            photos.append(f"/static/photos/{r['place_id']}/{f}")
     if not photos and r.get("thumbnail_url"):
         photos = [r["thumbnail_url"]]
     r["photos"] = photos
@@ -893,6 +901,20 @@ def restaurant_page(place_id):
                     sr["similarity"] = round(sim_by_id[pid], 3)
                     similar_rows.append(sr)
 
+        # ── Editorial article (if exists) ─────────────────────────────────────
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT slug, title, article_md
+                FROM editorial_articles
+                WHERE place_id = %s AND is_published = TRUE
+            """, (place_id,))
+            article_row = cur.fetchone()
+
+        article = None
+        if article_row:
+            article = dict(article_row)
+            article["preview_html"] = _md_to_html(article["article_md"], preview_only=True)
+
     finally:
         conn.close()
 
@@ -903,6 +925,7 @@ def restaurant_page(place_id):
                                          prev_id=prev_id,
                                          next_id=next_id,
                                          profiles=PROFILES,
+                                         article=article,
                                          error=None))
     if not request.cookies.get("sid"):
         resp.set_cookie("sid", str(uuid.uuid4()), max_age=60*60*24*365, httponly=True, samesite="Lax")
@@ -1572,7 +1595,9 @@ def index():
                     sd.service_options,
                     res.raw_data->>'type' AS place_type,
                     f.list_type             AS fav_type,
-                    f.score                 AS fav_score
+                    f.score                 AS fav_score,
+                    (ea.slug IS NOT NULL)   AS has_article,
+                    ea.slug                 AS article_slug
                     {quality_col}
                 FROM top_restaurants t
                 LEFT JOIN gemini_enrichments e  ON e.place_id  = t.place_id
@@ -1580,6 +1605,8 @@ def index():
                 LEFT JOIN restaurants       res ON res.place_id = t.place_id
                 LEFT JOIN user_favorites      f ON f.place_id  = t.place_id
                                                AND f.session_id = %(sid)s
+                LEFT JOIN editorial_articles ea ON ea.place_id = t.place_id
+                                               AND ea.is_published = TRUE
                 {quality_joins}
                 WHERE {where}
                 ORDER BY {order}
@@ -1599,12 +1626,19 @@ def index():
                 photo_dir  = os.path.join(PHOTOS_DIR, place_id_r)
                 photos: list[str] = []
                 if os.path.isdir(photo_dir):
+                    # SerpAPI photos: 0.jpg, 1.jpg, …
                     for i in range(MAX_PHOTOS):
                         path = os.path.join(photo_dir, f"{i}.jpg")
                         if os.path.exists(path):
                             photos.append(f"/static/photos/{place_id_r}/{i}.jpg")
                         else:
-                            break  # files are numbered consecutively
+                            break
+                    # Website scraper photos: 0_websiteScraper.jpg, 1_websiteScraper.jpg, …
+                    ws_files = sorted(
+                        f for f in os.listdir(photo_dir) if f.endswith("_websiteScraper.jpg")
+                    )
+                    for f in ws_files:
+                        photos.append(f"/static/photos/{place_id_r}/{f}")
 
                 # Fall back to the single Serper thumbnail if no cached photos
                 if not photos and r.get("thumbnail_url"):
@@ -1622,6 +1656,127 @@ def index():
     if new_sid:
         resp.set_cookie("sid", sid, max_age=365 * 24 * 3600, samesite="Lax", httponly=True)
     return resp
+
+
+# ── Editorial "Unsere Tipps" ──────────────────────────────────────────────────
+
+def _md_to_html(md: str, preview_only: bool = False) -> str:
+    """Convert markdown to HTML. If preview_only, return first 3 paragraphs."""
+    if preview_only:
+        paragraphs = []
+        for line in md.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if stripped:
+                paragraphs.append(stripped)
+            if len(paragraphs) >= 3:
+                break
+        md = "\n\n".join(paragraphs)
+    return markdown2.markdown(md, extras=["fenced-code-blocks", "strike"])
+
+
+@app.route("/tipps")
+def tipps_index():
+    """Editorial blog listing page."""
+    _init_db()
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT
+                    a.slug, a.title, a.teaser, a.generated_at,
+                    r.place_id, r.name, r.address, r.rating, r.rating_count,
+                    r.thumbnail_url,
+                    e.cuisine_type, e.avg_price_pp, e.vibe
+                FROM editorial_articles a
+                JOIN restaurants r ON r.place_id = a.place_id
+                LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
+                WHERE a.is_published = TRUE
+                ORDER BY a.generated_at DESC
+            """)
+            articles = []
+            for row in cur.fetchall():
+                row = dict(row)
+                row["city"] = _extract_city(row.get("address"))
+                pid = row["place_id"]
+                row["photo"] = _photo_url(pid, row.get("thumbnail_url"))
+                articles.append(row)
+    finally:
+        conn.close()
+    return render_template("tipps.html", articles=articles)
+
+
+@app.route("/tipps/<slug>")
+def tipps_article(slug):
+    """Single editorial article page."""
+    _init_db()
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT
+                    a.slug, a.title, a.article_md, a.teaser, a.generated_at, a.gemini_model,
+                    r.place_id, r.name, r.address, r.rating, r.rating_count,
+                    r.website, r.phone, r.latitude, r.longitude, r.thumbnail_url,
+                    e.cuisine_type, e.avg_price_pp, e.vibe, e.summary_de,
+                    e.cuisine_tags, e.audience_type
+                FROM editorial_articles a
+                JOIN restaurants r ON r.place_id = a.place_id
+                LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
+                WHERE a.slug = %s AND a.is_published = TRUE
+            """, (slug,))
+            article = cur.fetchone()
+
+        if not article:
+            return redirect("/tipps")
+
+        article = dict(article)
+        article["city"] = _extract_city(article.get("address"))
+        article["article_html"] = _md_to_html(article["article_md"])
+        pid = article["place_id"]
+
+        # Load photos
+        photo_dir = os.path.join(PHOTOS_DIR, pid)
+        photos: list[str] = []
+        if os.path.isdir(photo_dir):
+            for i in range(MAX_PHOTOS):
+                path = os.path.join(photo_dir, f"{i}.jpg")
+                if os.path.exists(path):
+                    photos.append(f"/static/photos/{pid}/{i}.jpg")
+                else:
+                    break
+            ws_files = sorted(f for f in os.listdir(photo_dir) if f.endswith("_websiteScraper.jpg"))
+            for f in ws_files:
+                photos.append(f"/static/photos/{pid}/{f}")
+        if not photos and article.get("thumbnail_url"):
+            photos = [article["thumbnail_url"]]
+        article["photos"] = photos
+
+        # Load 3 other published articles for "Mehr Tipps" footer
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT a.slug, a.title, a.teaser,
+                       r.place_id, r.name, r.address, r.thumbnail_url,
+                       e.cuisine_type
+                FROM editorial_articles a
+                JOIN restaurants r ON r.place_id = a.place_id
+                LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
+                WHERE a.is_published = TRUE AND a.slug != %s
+                ORDER BY a.generated_at DESC
+                LIMIT 3
+            """, (slug,))
+            more = []
+            for row in cur.fetchall():
+                row = dict(row)
+                row["city"] = _extract_city(row.get("address"))
+                row["photo"] = _photo_url(row["place_id"], row.get("thumbnail_url"))
+                more.append(row)
+        article["more"] = more
+
+    finally:
+        conn.close()
+    return render_template("tipps_article.html", a=article)
 
 
 if __name__ == "__main__":
