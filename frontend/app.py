@@ -1349,13 +1349,11 @@ def index():
     page           = max(1, int(request.args.get("page", 1) or 1))
     view           = request.args.get("view", "").strip()           # "" | "want" | "been"
     sort           = request.args.get("sort", "").strip()           # "" | "quality"
-    type_filter    = request.args.get("type_filter", "").strip()
-    tag_filter     = request.args.get("tag_filter",  "").strip()
     cuisine_filter = request.args.get("cuisine_filter", "").strip()
-    attr_filter    = request.args.get("attr_filter",    "").strip()
+    price_filter   = request.args.get("price_filter",   "").strip()   # "low" | "mid" | "high"
 
     _args_no_cuisine = {k: v for k, v in request.args.items() if k != "cuisine_filter"}
-    _args_no_attr    = {k: v for k, v in request.args.items() if k != "attr_filter"}
+    _args_no_price   = {k: v for k, v in request.args.items() if k != "price_filter"}
 
     ctx = {
         "total": 0, "top_count": 0, "avg_rating": "–", "enriched_count": 0,
@@ -1367,15 +1365,12 @@ def index():
         "profiles": PROFILES,
         "page": page, "total_pages": 1, "total_filtered": 0, "per_page": PER_PAGE,
         "view": view, "sort": sort,
-        "type_filter": type_filter, "tag_filter": tag_filter,
-        "available_types": [], "available_tags": [],
         "cuisine_filter": cuisine_filter,
         "qs_no_cuisine": urlencode(_args_no_cuisine),
-        "attr_filter": attr_filter,
-        "qs_no_attr":  urlencode(_args_no_attr),
+        "price_filter": price_filter,
+        "qs_no_price":  urlencode(_args_no_price),
         "top_cuisines": [],        # list[tuple[str, int]]
         "cuisine_neighbors": {},   # dict[str, list[str]]
-        "attr_neighbors":    {},   # dict[str, list[str]]
         "error": None,
     }
 
@@ -1398,37 +1393,10 @@ def index():
             cur.execute("SELECT DISTINCT location FROM serper_cache ORDER BY location")
             ctx["locations"] = [r["location"] for r in cur.fetchall()]
 
-            # Available types for filter UI (top 15 by count)
-            cur.execute("""
-                SELECT res.raw_data->>'type' AS place_type, COUNT(*) AS n
-                FROM top_restaurants t
-                JOIN restaurants res ON res.place_id = t.place_id
-                WHERE res.raw_data->>'type' IS NOT NULL
-                GROUP BY 1 ORDER BY 2 DESC LIMIT 15
-            """)
-            ctx["available_types"] = [r["place_type"] for r in cur.fetchall() if r["place_type"]]
-
-            # Available atmosphere+highlight tags for filter UI (top 20 by count)
-            cur.execute("""
-                SELECT tag, COUNT(*) AS n
-                FROM top_restaurants t
-                JOIN serpapi_details sd ON sd.place_id = t.place_id
-                CROSS JOIN LATERAL unnest(
-                    COALESCE(sd.atmosphere,'{}') || COALESCE(sd.highlights,'{}')
-                ) AS tag
-                WHERE tag IS NOT NULL AND tag <> ''
-                GROUP BY 1 ORDER BY 2 DESC LIMIT 20
-            """)
-            ctx["available_tags"] = [r["tag"] for r in cur.fetchall()]
-
             # Cuisine filter: load neighbors + top cuisine_types
             cuisine_neighbors        = _load_cuisine_neighbors(conn)
             ctx["cuisine_neighbors"] = cuisine_neighbors
             ctx["top_cuisines"]      = _load_top_cuisines(conn)
-
-            # Attr filter: load neighbors
-            attr_neighbors        = _load_attr_neighbors(conn)
-            ctx["attr_neighbors"] = attr_neighbors
 
             # Build main query
             score_col  = f"{profile_key}_score" if profile_key else None
@@ -1468,15 +1436,6 @@ def index():
             if view in ("want", "been"):
                 conditions.append("f.list_type = %(view)s")
                 params["view"] = view
-            if type_filter:
-                conditions.append("res.raw_data->>'type' = %(type_filter)s")
-                params["type_filter"] = type_filter
-            if tag_filter:
-                conditions.append(
-                    "(%(tag_filter)s = ANY(COALESCE(sd.atmosphere,'{}'))"
-                    " OR %(tag_filter)s = ANY(COALESCE(sd.highlights,'{}')))"
-                )
-                params["tag_filter"] = tag_filter
             if cuisine_filter:
                 # Expand filter: Jina neighbors + word-overlap (e.g. "Weinbar" → "Bodega & Weinbar")
                 explicit = set([cuisine_filter] + cuisine_neighbors.get(cuisine_filter, []))
@@ -1487,20 +1446,12 @@ def index():
                 expanded_cuisines = list(explicit | word_matches)
                 conditions.append("e.cuisine_type = ANY(%(cuisine_types)s)")
                 params["cuisine_types"] = expanded_cuisines
-            if attr_filter:
-                # Expand via Jina neighbors + word-overlap across all three tag arrays
-                explicit_a = set([attr_filter] + attr_neighbors.get(attr_filter, []))
-                word_matches_a = {
-                    a for a in attr_neighbors
-                    if a not in explicit_a and _cuisine_covers(attr_filter, a, attr_neighbors)
-                }
-                expanded_attrs = list(explicit_a | word_matches_a)
-                conditions.append("""(
-                    e.cuisine_tags  && %(attrs)s OR
-                    e.interior_tags && %(attrs)s OR
-                    e.food_tags     && %(attrs)s
-                )""")
-                params["attrs"] = expanded_attrs
+            if price_filter == "low":
+                conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp <= 25")
+            elif price_filter == "mid":
+                conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp > 25 AND e.avg_price_pp <= 50")
+            elif price_filter == "high":
+                conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp > 50")
 
             where = " AND ".join(conditions)
             if sort == "quality":
