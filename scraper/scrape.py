@@ -60,11 +60,17 @@ def _download_thumbnail(place_id: str, url: str) -> None:
         logger.debug("Thumbnail download failed for %s: %s", place_id, exc)
 
 
-def run(dry_run: bool = False, force: bool = False, init_only: bool = False) -> None:
+def run(dry_run: bool = False, force: bool = False, init_only: bool = False,
+        search_terms: list | None = None, locations: list | None = None,
+        city_id: int = 1) -> None:
+    """Run the search stage. Accepts city-specific overrides from pipeline.py."""
+    _terms     = search_terms or SEARCH_TERMS
+    _locations = locations    or LOCATIONS
+
     conn = get_connection()
 
     # Always ensure pipeline_runs table is seeded with current config
-    init_pipeline_runs(conn, SEARCH_TERMS, LOCATIONS)
+    init_pipeline_runs(conn, _terms, _locations)
     if init_only:
         logger.info("pipeline_runs initialised — exiting (--init mode)")
         conn.close()
@@ -72,7 +78,7 @@ def run(dry_run: bool = False, force: bool = False, init_only: bool = False) -> 
 
     # Determine which queries to run
     if force:
-        combinations = [(term, loc) for loc in LOCATIONS for term in SEARCH_TERMS]
+        combinations = [(term, loc) for loc in _locations for term in _terms]
         logger.info("FORCE mode — running all %d combinations", len(combinations))
     else:
         due_rows = get_due_pipeline_runs(conn)
@@ -86,7 +92,7 @@ def run(dry_run: bool = False, force: bool = False, init_only: bool = False) -> 
     total = len(combinations)
 
     logger.info("=" * 60)
-    logger.info("mallorcaeat scraper — Step 1")
+    logger.info("EatEatEat scraper — Step 1 (city_id=%d)", city_id)
     logger.info("  combinations due : %d", total)
     if dry_run:
         logger.info("  MODE             : DRY RUN (no API calls)")
@@ -128,7 +134,7 @@ def run(dry_run: bool = False, force: bool = False, init_only: bool = False) -> 
         new_count = 0
         for pos, place in enumerate(places, 1):
             try:
-                r_id = upsert_restaurant(conn, place)
+                r_id = upsert_restaurant(conn, place, city_id=city_id)
                 if r_id and cache_id:
                     link_search_result(conn, cache_id, r_id, pos)
                     # Set pipeline_status to 'new' only if not already in pipeline

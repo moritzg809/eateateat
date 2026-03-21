@@ -40,7 +40,7 @@ import detail_scrape
 import enrich as enricher
 import gem_qualify
 import scrape
-from config import LOCATIONS, SEARCH_TERMS
+from config import LOCATIONS, SEARCH_TERMS, CITIES
 from db import (
     count_today_enrichments,
     count_pending_new,
@@ -69,11 +69,14 @@ MIN_REVIEWS = 100
 # Stage 1: Search
 # ─────────────────────────────────────────────────────────────────────────────
 
-def stage_search(conn, dry_run: bool = False, force: bool = False):
+def stage_search(conn, dry_run: bool = False, force: bool = False, city_cfg: dict | None = None):
     """Run Serper searches for queries that are due (> 6 months)."""
     logger.info("[SEARCH] Starting…")
-    init_pipeline_runs(conn, SEARCH_TERMS, LOCATIONS)
-    scrape.run(dry_run=dry_run, force=force)
+    terms     = city_cfg["search_terms"] if city_cfg else SEARCH_TERMS
+    locations = city_cfg["locations"]    if city_cfg else LOCATIONS
+    city_id   = city_cfg["db_id"]        if city_cfg else 1
+    init_pipeline_runs(conn, terms, locations)
+    scrape.run(dry_run=dry_run, force=force, search_terms=terms, locations=locations, city_id=city_id)
     logger.info("[SEARCH] Done.")
 
 
@@ -417,6 +420,7 @@ def main():
     ap.add_argument("--daily-limit",  type=int, default=500, help="Max Gemini enrichments per day (default: 500)")
     ap.add_argument("--limit",        type=int, default=None, help="Max items per stage (for testing)")
     ap.add_argument("--verify-days",  type=int, default=730, help="Re-verify restaurants older than N days (default: 730)")
+    ap.add_argument("--city",         type=str, default=None, help="City slug to scrape (default: mallorca). Options: " + ", ".join(CITIES.keys()))
     args = ap.parse_args()
 
     stages = [s.strip().lower() for s in args.stages.split(",")]
@@ -424,17 +428,24 @@ def main():
     if invalid:
         ap.error(f"Unknown stage(s): {invalid}. Valid: {ALL_STAGES}")
 
+    # Resolve city config
+    city_slug = args.city or "mallorca"
+    if city_slug not in CITIES:
+        ap.error(f"Unknown city '{city_slug}'. Available: {', '.join(CITIES.keys())}")
+    city_cfg = CITIES[city_slug]
+
     conn = get_connection()
 
     logger.info("=" * 60)
-    logger.info("mallorcaeat pipeline")
+    logger.info("EatEatEat pipeline")
+    logger.info("  city        : %s (db_id=%d)", city_slug, city_cfg["db_id"])
     logger.info("  stages      : %s", ", ".join(stages))
     logger.info("  dry-run     : %s", args.dry_run)
     logger.info("  daily-limit : %d enrichments/day", args.daily_limit)
     logger.info("=" * 60)
 
     if "search" in stages:
-        stage_search(conn, dry_run=args.dry_run, force=args.force_search)
+        stage_search(conn, dry_run=args.dry_run, force=args.force_search, city_cfg=city_cfg)
 
     if "qualify" in stages:
         stage_qualify(conn, dry_run=args.dry_run)
