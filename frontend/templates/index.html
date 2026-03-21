@@ -273,17 +273,22 @@
     <a href="?{{ qs_no_price }}{% if qs_no_price %}&{% endif %}price_filter=low"
        class="font-mono text-[10px] px-2.5 py-1 rounded-full border transition
               {{ 'bg-terra text-cream border-terra' if price_filter == 'low' else 'border-sand text-ink/40 hover:border-terra/40 hover:text-terra' }}">
-      € bis 25
+      € bis 15
     </a>
     <a href="?{{ qs_no_price }}{% if qs_no_price %}&{% endif %}price_filter=mid"
        class="font-mono text-[10px] px-2.5 py-1 rounded-full border transition
               {{ 'bg-terra text-cream border-terra' if price_filter == 'mid' else 'border-sand text-ink/40 hover:border-terra/40 hover:text-terra' }}">
-      €€ 25–50
+      €€ 15–40
     </a>
     <a href="?{{ qs_no_price }}{% if qs_no_price %}&{% endif %}price_filter=high"
        class="font-mono text-[10px] px-2.5 py-1 rounded-full border transition
               {{ 'bg-terra text-cream border-terra' if price_filter == 'high' else 'border-sand text-ink/40 hover:border-terra/40 hover:text-terra' }}">
-      €€€ 50+
+      €€€ 40–70
+    </a>
+    <a href="?{{ qs_no_price }}{% if qs_no_price %}&{% endif %}price_filter=vhigh"
+       class="font-mono text-[10px] px-2.5 py-1 rounded-full border transition
+              {{ 'bg-terra text-cream border-terra' if price_filter == 'vhigh' else 'border-sand text-ink/40 hover:border-terra/40 hover:text-terra' }}">
+      €€€€ 70+
     </a>
   </div>
 </div>
@@ -524,7 +529,7 @@
         {% if r.must_order %}
         <div class="flex items-start gap-1.5 mb-2">
           <span class="text-terra text-xs shrink-0 mt-0.5">🍴</span>
-          <p class="font-sans text-xs text-ink/60 leading-snug">{{ r.must_order }}</p>
+          <p class="font-sans text-xs text-ink/60 leading-snug line-clamp-2">{{ r.must_order }}</p>
         </div>
         {% endif %}
 

@@ -1532,7 +1532,7 @@ def index(city):
     view           = request.args.get("view", "").strip()           # "" | "want" | "been"
     sort           = request.args.get("sort", "").strip()           # "" | "quality"
     cuisine_filter = request.args.get("cuisine_filter", "").strip()
-    price_filter   = request.args.get("price_filter",   "").strip()   # "low" | "mid" | "high"
+    price_filter   = request.args.get("price_filter",   "").strip()   # "low" | "mid" | "high" | "vhigh"
 
     _args_no_cuisine = {k: v for k, v in request.args.items() if k != "cuisine_filter"}
     _args_no_price   = {k: v for k, v in request.args.items() if k != "price_filter"}
@@ -1668,11 +1668,13 @@ def index(city):
                 conditions.append("e.cuisine_type = ANY(%(cuisine_types)s)")
                 params["cuisine_types"] = expanded_cuisines
             if price_filter == "low":
-                conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp <= 25")
+                conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp <= 15")
             elif price_filter == "mid":
-                conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp > 25 AND e.avg_price_pp <= 50")
+                conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp > 15 AND e.avg_price_pp <= 40")
             elif price_filter == "high":
-                conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp > 50")
+                conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp > 40 AND e.avg_price_pp <= 70")
+            elif price_filter == "vhigh":
+                conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp > 70")
 
             where = " AND ".join(conditions)
             if semantic_order:
