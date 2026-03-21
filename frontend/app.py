@@ -1590,8 +1590,10 @@ def index(city):
             conditions.append("t.city_id = %(city_id)s")
             params["city_id"] = city_data["id"]
 
+            semantic_order = False   # flag: sort by semantic score instead of curation
             if search:
                 # Semantic search via Jina embeddings (falls back to ILIKE if no embeddings yet)
+                MIN_SEMANTIC_SCORE = 0.25   # below this → not relevant enough to show
                 embed_result = _load_search_embeddings(conn, city_data["id"])
                 if embed_result:
                     try:
@@ -1603,11 +1605,17 @@ def index(city):
                         )[0]
                         place_ids_all, matrix = embed_result
                         scores = matrix @ q_vec          # cosine similarity (N,)
-                        top_k  = 200
-                        top_idxs    = np.argsort(scores)[::-1][:top_k]
-                        semantic_ids = [place_ids_all[i] for i in top_idxs]
+                        # Only keep results above threshold, sorted by score desc
+                        top_idxs = np.argsort(scores)[::-1]
+                        semantic_ids = [
+                            place_ids_all[i] for i in top_idxs
+                            if scores[i] >= MIN_SEMANTIC_SCORE
+                        ]
+                        # semantic_ids is already in score order — use array_position to
+                        # preserve that order in SQL
                         conditions.append("t.place_id = ANY(%(semantic_ids)s)")
-                        params["semantic_ids"] = semantic_ids
+                        params["semantic_ids"] = semantic_ids or ["__no_match__"]
+                        semantic_order = bool(semantic_ids)
                     except Exception:
                         # Fallback to ILIKE on any model error
                         conditions.append("""(
@@ -1667,7 +1675,11 @@ def index(city):
                 conditions.append("e.avg_price_pp IS NOT NULL AND e.avg_price_pp > 50")
 
             where = " AND ".join(conditions)
-            if sort == "quality":
+            if semantic_order:
+                # Preserve semantic ranking: array_position returns the index in the
+                # ordered semantic_ids list, so rank-1 result appears first.
+                order = "array_position(%(semantic_ids)s::text[], t.place_id), t.rating DESC"
+            elif sort == "quality":
                 order = "quality_score DESC NULLS LAST, t.rating DESC"
             elif score_col:
                 order = f"e.{score_col} DESC, t.rating DESC"
