@@ -258,10 +258,12 @@ def call_gemini(name: str, address: str, lat=None, lng=None, website: str | None
         website_section=website_section,
     )
 
-    # Build tools — always Google Maps, add URL context if website available
-    tools = [types.Tool(google_maps=types.GoogleMaps())]
+    # Build tools — url_context and google_maps cannot be combined in one request;
+    # prefer url_context when a website is available, otherwise fall back to google_maps
     if website:
-        tools.append(types.Tool(url_context=types.UrlContext()))
+        tools = [types.Tool(url_context=types.UrlContext())]
+    else:
+        tools = [types.Tool(google_maps=types.GoogleMaps())]
 
     # Build config — lat/lng is optional
     config_kwargs: dict = {
