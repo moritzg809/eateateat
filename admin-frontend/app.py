@@ -4,11 +4,15 @@ Runs on port 8081 (separate from main frontend on 8080).
 """
 
 import os
+import re as _re
+import threading
+import time as _time
+import uuid
 from datetime import datetime, timezone
 
 import psycopg2
 import psycopg2.extras
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mallorcaeat-admin-dev-secret")
@@ -362,6 +366,291 @@ def review_reject():
     if rejected:
         flash(f"✗ {rejected} Restaurant(s) abgelehnt.", "info")
     return redirect(url_for("review", page=page))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deep Research article generation
+# ─────────────────────────────────────────────────────────────────────────────
+
+GEMINI_DEEP_MODEL = "deep-research-pro-preview-12-2025"
+
+ARTICLE_PROMPT = """
+Schreibe einen hochwertigen deutschen Restaurantartikel über das Restaurant „{name}" in {city}.
+
+Recherchiere:
+- Der Küchenchef / die Gründer: Biografie, Ausbildung, Küchenstil, Philosophie
+- Das Restaurant selbst: Geschichte, Atmosphäre, Lage, Auszeichnungen
+- Die Küche: typische Gerichte, Konzept, lokale Tradition
+- Praktische Infos: Preise, Reservierung, Öffnungszeiten
+- Was das Restaurant für deutschsprachige Reisende besonders macht
+
+Zielgruppe: deutschsprachige Reisende, die authentische Küche abseits des Massentourismus suchen.
+Format: journalistischer Restaurantartikel mit einem prägnanten Titel (als H1), Einleitung, mehreren Abschnitten und Fazit.
+Der Artikel soll zwischen 600 und 1200 Wörter lang sein.
+"""
+
+# In-memory job store: job_id → dict
+_JOBS: dict[str, dict] = {}
+
+
+def _slugify(name: str, city: str) -> str:
+    s = f"{name}-{city}".lower()
+    for src, dst in [("äàáâã", "a"), ("éèêë", "e"), ("íìîï", "i"),
+                     ("öóòôõ", "o"), ("üùúû", "u"), ("ñ", "n"), ("ç", "c"), ("ß", "ss")]:
+        for ch in src:
+            s = s.replace(ch, dst)
+    s = _re.sub(r"[^a-z0-9]+", "-", s)
+    return s.strip("-")
+
+
+def _extract_title(md: str) -> str:
+    for line in md.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip()
+    for line in md.splitlines():
+        if line.strip():
+            return line.strip()[:100]
+    return "Unser Tipp"
+
+
+def _extract_teaser(md: str) -> str:
+    lines = md.splitlines()
+    in_intro = False
+    paragraphs = []
+    for line in lines:
+        s = line.strip()
+        if s.startswith("#"):
+            if in_intro and paragraphs:
+                break
+            in_intro = True
+            continue
+        if not s or s.startswith("*") or s.startswith("|") or s.startswith("-"):
+            continue
+        paragraphs.append(s)
+        if len(paragraphs) >= 2:
+            break
+    teaser = " ".join(paragraphs)
+    return teaser[:300] + ("…" if len(teaser) > 300 else "")
+
+
+def _extract_city(address: str) -> str:
+    m = _re.search(r"\d{5}\s+([^,]+)", address)
+    if m:
+        return m.group(1).strip()
+    parts = [p.strip() for p in address.split(",")]
+    return parts[-2] if len(parts) >= 2 else parts[0]
+
+
+def _run_generation(job_id: str, place_id: str, name: str, address: str, city_id: int):
+    """Background thread: generate article via Gemini Deep Research, then save to DB."""
+    _JOBS[job_id]["status"] = "running"
+    try:
+        from google import genai as _genai
+
+        city = _extract_city(address)
+        prompt = ARTICLE_PROMPT.format(name=name, city=city)
+
+        client = _genai.Client()
+        interaction = client.interactions.create(
+            input=prompt,
+            agent=GEMINI_DEEP_MODEL,
+            background=True,
+        )
+        _JOBS[job_id]["interaction_id"] = interaction.id
+
+        while True:
+            interaction = client.interactions.get(interaction.id)
+            _JOBS[job_id]["gemini_status"] = interaction.status
+            if interaction.status == "completed":
+                break
+            if interaction.status == "failed":
+                raise RuntimeError(f"Deep Research fehlgeschlagen: {interaction.error}")
+            _time.sleep(15)
+
+        article_md = interaction.outputs[-1].text
+        title = _extract_title(article_md)
+        teaser = _extract_teaser(article_md)
+        slug = _slugify(name, city)
+
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO editorial_articles
+                    (place_id, slug, title, article_md, teaser, gemini_model, is_published, city_id)
+                VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s)
+                ON CONFLICT (place_id) DO UPDATE SET
+                    slug         = EXCLUDED.slug,
+                    title        = EXCLUDED.title,
+                    article_md   = EXCLUDED.article_md,
+                    teaser       = EXCLUDED.teaser,
+                    gemini_model = EXCLUDED.gemini_model,
+                    generated_at = NOW()
+                """,
+                (place_id, slug, title, article_md, teaser, GEMINI_DEEP_MODEL, city_id),
+            )
+        conn.commit()
+        conn.close()
+
+        _JOBS[job_id].update({"status": "done", "slug": slug, "title": title})
+
+    except Exception as exc:
+        _JOBS[job_id].update({"status": "error", "error": str(exc)})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Articles list
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/articles")
+def articles():
+    city_id = request.args.get("city_id", 1, type=int)
+    ctx: dict = {}
+    try:
+        conn = get_db()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+
+            cur.execute("SELECT id, name, slug FROM cities ORDER BY id")
+            ctx["cities"] = cur.fetchall()
+
+            cur.execute("SELECT id, name, slug FROM cities WHERE id = %s", (city_id,))
+            ctx["city"] = cur.fetchone()
+            ctx["city_id"] = city_id
+
+            cur.execute(
+                """
+                SELECT
+                    r.place_id,
+                    r.name,
+                    r.address,
+                    r.rating,
+                    r.rating_count,
+                    e.cuisine_type,
+                    e.avg_price_pp,
+                    a.slug          AS article_slug,
+                    a.title         AS article_title,
+                    a.teaser        AS article_teaser,
+                    a.is_published,
+                    a.generated_at,
+                    c.slug          AS city_slug
+                FROM top_restaurants t
+                JOIN restaurants r ON r.place_id = t.place_id
+                LEFT JOIN gemini_enrichments e ON e.place_id = r.place_id
+                LEFT JOIN editorial_articles a ON a.place_id = r.place_id
+                JOIN cities c ON c.id = t.city_id
+                WHERE t.city_id = %s
+                ORDER BY
+                    a.is_published DESC NULLS LAST,
+                    a.generated_at DESC NULLS LAST,
+                    r.rating DESC NULLS LAST
+                """,
+                (city_id,),
+            )
+            ctx["restaurants"] = cur.fetchall()
+
+            ctx["count_total"]     = len(ctx["restaurants"])
+            ctx["count_published"] = sum(1 for r in ctx["restaurants"] if r["is_published"])
+            ctx["count_draft"]     = sum(1 for r in ctx["restaurants"] if r["article_slug"] and not r["is_published"])
+            ctx["count_none"]      = sum(1 for r in ctx["restaurants"] if not r["article_slug"])
+
+        conn.close()
+    except Exception as exc:
+        ctx["error"] = str(exc)
+
+    ctx["now"] = datetime.now(timezone.utc)
+    # Pass active jobs so the template can restore spinners after page reload
+    ctx["active_jobs"] = {
+        job["place_id"]: {"job_id": jid, **job}
+        for jid, job in _JOBS.items()
+        if job.get("status") in ("pending", "running")
+    }
+    return render_template("articles.html", **ctx)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Start article generation (returns JSON with job_id)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/articles/generate", methods=["POST"])
+def articles_generate():
+    place_id = request.form["place_id"]
+    name     = request.form["name"]
+    address  = request.form["address"]
+    city_id  = request.form.get("city_id", 1, type=int)
+
+    # Kill any existing running job for this restaurant
+    for jid, job in list(_JOBS.items()):
+        if job.get("place_id") == place_id and job.get("status") in ("pending", "running"):
+            _JOBS[jid]["status"] = "cancelled"
+
+    job_id = str(uuid.uuid4())
+    _JOBS[job_id] = {
+        "status": "pending",
+        "place_id": place_id,
+        "name": name,
+        "gemini_status": None,
+        "error": None,
+    }
+
+    t = threading.Thread(
+        target=_run_generation,
+        args=(job_id, place_id, name, address, city_id),
+        daemon=True,
+    )
+    t.start()
+
+    return jsonify({"job_id": job_id, "status": "pending"})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Poll job status (JSON)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/articles/status/<job_id>")
+def articles_status(job_id):
+    job = _JOBS.get(job_id)
+    if not job:
+        return jsonify({"status": "not_found"}), 404
+    return jsonify(job)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Publish / unpublish
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/articles/<place_id>/publish", methods=["POST"])
+def articles_publish(place_id):
+    action  = request.form.get("action", "publish")
+    city_id = request.form.get("city_id", 1, type=int)
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE editorial_articles SET is_published = %s WHERE place_id = %s",
+                (action == "publish", place_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for("articles", city_id=city_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Delete article
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/articles/<place_id>/delete", methods=["POST"])
+def articles_delete(place_id):
+    city_id = request.form.get("city_id", 1, type=int)
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM editorial_articles WHERE place_id = %s", (place_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for("articles", city_id=city_id))
 
 
 if __name__ == "__main__":

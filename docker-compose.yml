@@ -139,6 +139,7 @@ services:
     build: ./admin-frontend
     environment:
       DATABASE_URL: postgresql://mallorcaeat:${POSTGRES_PASSWORD}@postgres:5432/mallorcaeat
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     ports:
       - "8081:8081"
     depends_on:

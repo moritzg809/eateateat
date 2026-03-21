@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MallorcaEat · Tipps-Artikel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+            alert: '#b91c1c',
+            warn:  '#d97706',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #0f0e0d; color: #f5f0e8; }
+    .card { background: rgba(245,240,232,.04); border: 1px solid rgba(245,240,232,.08); }
+    .card:hover { background: rgba(245,240,232,.06); }
+    .badge-published { background: rgba(61,90,71,.25); color: #86efac; border: 1px solid rgba(61,90,71,.4); }
+    .badge-draft     { background: rgba(217,119,6,.15); color: #fcd34d; border: 1px solid rgba(217,119,6,.3); }
+    .badge-none      { background: rgba(245,240,232,.06); color: rgba(245,240,232,.35); border: 1px solid rgba(245,240,232,.1); }
+    .btn-primary  { background: #c4622d; color: #f5f0e8; }
+    .btn-primary:hover { background: #9e3d14; }
+    .btn-ghost    { background: rgba(245,240,232,.07); color: rgba(245,240,232,.7); border: 1px solid rgba(245,240,232,.12); }
+    .btn-ghost:hover { background: rgba(245,240,232,.12); }
+    .btn-danger   { background: rgba(185,28,28,.15); color: #fca5a5; border: 1px solid rgba(185,28,28,.3); }
+    .btn-danger:hover { background: rgba(185,28,28,.3); }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-pulse { animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+    .tab-active { color: #f5f0e8; border-bottom: 2px solid #c4622d; }
+    .tab-inactive { color: rgba(245,240,232,.4); border-bottom: 2px solid transparent; }
+    .tab-inactive:hover { color: rgba(245,240,232,.65); }
+    .flash-success { background: rgba(61,90,71,.25); border-color: rgba(61,90,71,.5); color: #86efac; }
+    .flash-error   { background: rgba(185,28,28,.15); border-color: rgba(185,28,28,.4); color: #fca5a5; }
+  </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<!-- ═══════════════════════ HEADER ═══════════════════════ -->
+<header class="border-b border-cream/10">
+  <div class="max-w-6xl mx-auto px-6 py-8">
+    <div class="flex items-end justify-between flex-wrap gap-4">
+      <div>
+        <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest mb-2">
+          Admin ·
+          <a href="/" class="hover:text-cream/50 transition-colors">Pipeline Status</a>
+          <span class="text-cream/15 mx-1">›</span>
+          <a href="/review" class="hover:text-cream/50 transition-colors">Geheimtipp-Review</a>
+          <span class="text-cream/15 mx-1">›</span>
+          Tipps-Artikel
+        </div>
+        <h1 class="font-serif text-4xl font-bold text-cream">
+          Mallorca<em class="text-terra">Eat</em>
+          <span class="text-cream/20 text-2xl ml-3">/ Tipps-Artikel</span>
+        </h1>
+      </div>
+      <div class="flex gap-6 text-right">
+        <div>
+          <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest">Veröffentlicht</div>
+          <div class="font-serif text-3xl font-bold text-sage mt-1">{{ count_published }}</div>
+        </div>
+        <div>
+          <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest">Entwurf</div>
+          <div class="font-serif text-3xl font-bold text-warn mt-1">{{ count_draft }}</div>
+        </div>
+        <div>
+          <div class="font-mono text-[10px] text-cream/25 uppercase tracking-widest">Ohne Artikel</div>
+          <div class="font-serif text-3xl font-bold text-cream/30 mt-1">{{ count_none }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+{% if error %}
+<div class="max-w-6xl mx-auto px-6 mt-8">
+  <div class="border border-red-800 bg-red-950 rounded-xl p-6">
+    <h2 class="font-mono text-sm text-red-400 uppercase tracking-wide mb-2">Fehler</h2>
+    <pre class="font-mono text-xs text-red-300">{{ error }}</pre>
+  </div>
+</div>
+{% else %}
+
+<div class="max-w-6xl mx-auto px-6 py-8">
+
+  <!-- ═══ CITY TABS ════════════════════════════════════════════════ -->
+  <nav class="flex gap-6 border-b border-cream/10 mb-8">
+    {% for c in cities %}
+    <a href="/articles?city_id={{ c.id }}"
+       class="font-mono text-xs uppercase tracking-widest pb-3 transition-colors
+              {% if c.id == city_id %}tab-active{% else %}tab-inactive{% endif %}">
+      {{ c.name }}
+    </a>
+    {% endfor %}
+  </nav>
+
+  <!-- ═══ RESTAURANT GRID ══════════════════════════════════════════ -->
+  <div class="space-y-3" id="restaurant-list">
+
+    {% for r in restaurants %}
+    {% set has_article = r.article_slug is not none %}
+    {% set is_active_job = r.place_id in active_jobs %}
+
+    <div class="card rounded-xl p-5 transition-colors"
+         id="card-{{ r.place_id | replace('/', '_') }}"
+         data-place-id="{{ r.place_id }}">
+      <div class="flex items-start gap-5">
+
+        <!-- Left: restaurant info -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-3 flex-wrap mb-1">
+            <span class="font-serif text-base font-bold text-cream">{{ r.name }}</span>
+
+            {% if r.is_published %}
+            <span class="status-badge badge-published font-mono text-[10px] px-2 py-0.5 rounded-full">
+              ✓ Veröffentlicht
+            </span>
+            {% elif has_article %}
+            <span class="status-badge badge-draft font-mono text-[10px] px-2 py-0.5 rounded-full">
+              ○ Entwurf
+            </span>
+            {% else %}
+            <span class="status-badge badge-none font-mono text-[10px] px-2 py-0.5 rounded-full">
+              — Kein Artikel
+            </span>
+            {% endif %}
+          </div>
+
+          <div class="flex items-center gap-3 flex-wrap mb-2">
+            {% if r.rating %}
+            <span class="font-mono text-[11px] text-cream/45">★ {{ r.rating }}</span>
+            {% endif %}
+            {% if r.cuisine_type %}
+            <span class="font-mono text-[11px] text-cream/35">{{ r.cuisine_type }}</span>
+            {% endif %}
+            {% if r.avg_price_pp %}
+            <span class="font-mono text-[11px] text-cream/35">~{{ r.avg_price_pp | int }}€ p.P.</span>
+            {% endif %}
+          </div>
+
+          <!-- Article preview if exists -->
+          {% if has_article and r.article_title %}
+          <div class="mt-2 pl-3 border-l border-cream/10">
+            <p class="font-serif text-sm text-cream/70 leading-snug mb-1">{{ r.article_title }}</p>
+            {% if r.article_teaser %}
+            <p class="font-mono text-[10px] text-cream/30 line-clamp-2 leading-relaxed">{{ r.article_teaser }}</p>
+            {% endif %}
+            {% if r.generated_at %}
+            <p class="font-mono text-[9px] text-cream/20 mt-1">
+              Generiert: {{ r.generated_at.strftime('%d.%m.%Y %H:%M') }}
+            </p>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          <!-- Progress area (shown while generating) -->
+          <div class="progress-area mt-3 hidden">
+            <div class="flex items-center gap-2">
+              <svg class="spin w-3.5 h-3.5 text-terra flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+              </svg>
+              <span class="progress-text font-mono text-[11px] text-terra progress-pulse">
+                Deep Research läuft…
+              </span>
+            </div>
+          </div>
+
+          <!-- Error area -->
+          <div class="error-area mt-3 hidden">
+            <p class="font-mono text-[11px] text-red-400 error-text"></p>
+          </div>
+
+        </div>
+
+        <!-- Right: action buttons -->
+        <div class="flex flex-col gap-2 items-end flex-shrink-0">
+
+          {% if has_article %}
+          <!-- View link -->
+          <a href="http://localhost:8080/{{ r.city_slug }}/tipps/{{ r.article_slug }}"
+             target="_blank"
+             class="btn-ghost font-mono text-[11px] px-3 py-1.5 rounded-lg transition-colors">
+            Ansehen →
+          </a>
+
+          <!-- Publish / Unpublish toggle -->
+          {% if r.is_published %}
+          <form method="POST" action="/articles/{{ r.place_id }}/publish">
+            <input type="hidden" name="action"  value="unpublish">
+            <input type="hidden" name="city_id" value="{{ city_id }}">
+            <button type="submit"
+                    class="btn-ghost font-mono text-[11px] px-3 py-1.5 rounded-lg transition-colors">
+              Depublizieren
+            </button>
+          </form>
+          {% else %}
+          <form method="POST" action="/articles/{{ r.place_id }}/publish">
+            <input type="hidden" name="action"  value="publish">
+            <input type="hidden" name="city_id" value="{{ city_id }}">
+            <button type="submit"
+                    class="font-mono text-[11px] px-3 py-1.5 rounded-lg transition-colors
+                           bg-sage/20 text-green-300 border border-sage/40 hover:bg-sage/35">
+              Veröffentlichen
+            </button>
+          </form>
+          {% endif %}
+          {% endif %}
+
+          <!-- Generate / Re-generate button -->
+          <button type="button"
+                  onclick="generateArticle(this)"
+                  data-place-id="{{ r.place_id }}"
+                  data-name="{{ r.name | e }}"
+                  data-address="{{ r.address | e }}"
+                  data-city-id="{{ city_id }}"
+                  class="generate-btn btn-primary font-mono text-[11px] px-3 py-1.5 rounded-lg transition-colors
+                         {% if is_active_job %}opacity-50 cursor-not-allowed{% endif %}"
+                  {% if is_active_job %}disabled{% endif %}>
+            {% if has_article %}Neu generieren{% else %}Artikel erstellen{% endif %}
+          </button>
+
+          {% if has_article %}
+          <!-- Delete -->
+          <form method="POST" action="/articles/{{ r.place_id }}/delete"
+                onsubmit="return confirm('Artikel wirklich löschen?')">
+            <input type="hidden" name="city_id" value="{{ city_id }}">
+            <button type="submit"
+                    class="btn-danger font-mono text-[10px] px-3 py-1.5 rounded-lg transition-colors">
+              Löschen
+            </button>
+          </form>
+          {% endif %}
+
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+  </div><!-- /restaurant-list -->
+
+</div><!-- /main -->
+{% endif %}
+
+<script>
+  // Restore spinners for any jobs that were running before this page load
+  const activeJobs = {{ active_jobs | tojson }};
+  for (const [placeId, job] of Object.entries(activeJobs)) {
+    startPolling(job.job_id, placeId);
+  }
+
+  function cardId(placeId) {
+    return 'card-' + placeId.replace(/\//g, '_');
+  }
+
+  function generateArticle(btn) {
+    const placeId = btn.dataset.placeId;
+    const name    = btn.dataset.name;
+    const address = btn.dataset.address;
+    const cityId  = btn.dataset.cityId;
+
+    btn.disabled = true;
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    const card = document.getElementById(cardId(placeId));
+    showProgress(card, 'Deep Research starten…');
+
+    const fd = new FormData();
+    fd.append('place_id', placeId);
+    fd.append('name', name);
+    fd.append('address', address);
+    fd.append('city_id', cityId);
+
+    fetch('/articles/generate', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => {
+        if (data.job_id) {
+          startPolling(data.job_id, placeId);
+        } else {
+          showError(card, 'Unbekannter Fehler beim Start.');
+        }
+      })
+      .catch(err => showError(card, String(err)));
+  }
+
+  function startPolling(jobId, placeId) {
+    const card = document.getElementById(cardId(placeId));
+    if (!card) return;
+    showProgress(card, 'Deep Research läuft…');
+    disableBtn(card);
+
+    const interval = setInterval(() => {
+      fetch('/articles/status/' + jobId)
+        .then(r => r.json())
+        .then(job => {
+          updateProgress(card, job);
+          if (job.status === 'done') {
+            clearInterval(interval);
+            // Reload the page to show the new article state
+            setTimeout(() => location.reload(), 800);
+          } else if (job.status === 'error' || job.status === 'not_found') {
+            clearInterval(interval);
+            hideProgress(card);
+            showError(card, job.error || 'Generierung fehlgeschlagen.');
+            enableBtn(card);
+          }
+        })
+        .catch(() => { /* silently retry */ });
+    }, 8000);
+  }
+
+  function updateProgress(card, job) {
+    const statuses = {
+      pending:   'Wird gestartet…',
+      running:   'Deep Research läuft…',
+      completed: '✓ Fertig, wird gespeichert…',
+    };
+    const geminiMap = {
+      running:   'Recherchiert…',
+      completed: 'Abgeschlossen ✓',
+    };
+    let msg = statuses[job.status] || 'Läuft…';
+    if (job.gemini_status && geminiMap[job.gemini_status]) {
+      msg += ' (' + geminiMap[job.gemini_status] + ')';
+    }
+    showProgress(card, msg);
+  }
+
+  function showProgress(card, msg) {
+    const area = card.querySelector('.progress-area');
+    const text = card.querySelector('.progress-text');
+    const errorArea = card.querySelector('.error-area');
+    if (area) { area.classList.remove('hidden'); }
+    if (text) { text.textContent = msg; }
+    if (errorArea) { errorArea.classList.add('hidden'); }
+  }
+
+  function hideProgress(card) {
+    const area = card.querySelector('.progress-area');
+    if (area) area.classList.add('hidden');
+  }
+
+  function showError(card, msg) {
+    const area  = card.querySelector('.error-area');
+    const text  = card.querySelector('.error-text');
+    if (area) area.classList.remove('hidden');
+    if (text) text.textContent = '✗ ' + msg;
+    hideProgress(card);
+  }
+
+  function disableBtn(card) {
+    const btn = card.querySelector('.generate-btn');
+    if (btn) { btn.disabled = true; btn.classList.add('opacity-50', 'cursor-not-allowed'); }
+  }
+
+  function enableBtn(card) {
+    const btn = card.querySelector('.generate-btn');
+    if (btn) { btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed'); }
+  }
+</script>
+
+</body>
+</html>
