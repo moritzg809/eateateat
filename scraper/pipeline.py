@@ -84,19 +84,29 @@ def stage_search(conn, dry_run: bool = False, force: bool = False, city_cfg: dic
 # Stage 2: Qualify
 # ─────────────────────────────────────────────────────────────────────────────
 
-def stage_qualify(conn, dry_run: bool = False):
+def stage_qualify(conn, dry_run: bool = False, city_cfg: dict | None = None):
     """Mark new restaurants as 'disqualified' if they're below quality threshold."""
-    logger.info("[QUALIFY] Checking new restaurants against quality threshold…")
+    min_rating  = city_cfg["min_rating"]       if city_cfg else MIN_RATING
+    min_reviews = city_cfg["min_rating_count"] if city_cfg else MIN_REVIEWS
+    city_id     = city_cfg["db_id"]            if city_cfg else None
+
+    logger.info("[QUALIFY] Checking new restaurants against quality threshold (≥%.1f★, ≥%d reviews)…",
+                min_rating, min_reviews)
+
+    city_filter = "AND city_id = %s" if city_id else ""
+    base_params = (min_rating, min_reviews)
+    city_params = (city_id,) if city_id else ()
 
     with conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             SELECT place_id, name, rating, rating_count
             FROM   restaurants
             WHERE  pipeline_status = 'new'
               AND  (rating < %s OR rating_count < %s)
+              {city_filter}
             """,
-            (MIN_RATING, MIN_REVIEWS),
+            base_params + city_params,
         )
         to_disqualify = cur.fetchall()
 
@@ -113,15 +123,16 @@ def stage_qualify(conn, dry_run: bool = False):
     # Also re-qualify 'disqualified' restaurants that now pass threshold
     with conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             UPDATE restaurants
             SET    pipeline_status = 'new'
             WHERE  pipeline_status = 'disqualified'
               AND  rating       >= %s
               AND  rating_count >= %s
+              {city_filter}
             RETURNING place_id, name
             """,
-            (MIN_RATING, MIN_REVIEWS),
+            base_params + city_params,
         )
         requalified = cur.fetchall()
     conn.commit()
@@ -448,7 +459,7 @@ def main():
         stage_search(conn, dry_run=args.dry_run, force=args.force_search, city_cfg=city_cfg)
 
     if "qualify" in stages:
-        stage_qualify(conn, dry_run=args.dry_run)
+        stage_qualify(conn, dry_run=args.dry_run, city_cfg=city_cfg)
 
     if "enrich" in stages:
         stage_enrich(conn, dry_run=args.dry_run, limit=args.limit, daily_limit=args.daily_limit)
