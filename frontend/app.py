@@ -1627,6 +1627,150 @@ def _md_to_html(md: str, preview_only: bool = False) -> str:
     return markdown2.markdown(md, extras=["fenced-code-blocks", "strike"])
 
 
+def _build_collection_query(col: dict) -> tuple[str, dict]:
+    """Return (WHERE fragment, params dict) for a collection's filter rule."""
+    ft  = col["filter_type"]
+    fv  = col["filter_value"]
+    ms  = col["min_score"] or 7
+    if ft == "audience":
+        return "e.audience_type = %(fv)s", {"fv": fv}
+    if ft == "cuisine":
+        return "e.cuisine_type ILIKE %(fv)s", {"fv": f"%{fv}%"}
+    if ft == "profile":
+        # fv is the score column prefix, e.g. "date" → e.date_score
+        return f"e.{fv}_score >= %(ms)s", {"ms": ms}
+    if ft == "city":
+        return "r.address ILIKE %(fv)s", {"fv": f"%{fv}%"}
+    if ft == "search":
+        return (
+            "(r.name ILIKE %(fv)s OR e.summary_de ILIKE %(fv)s OR e.cuisine_type ILIKE %(fv)s)",
+            {"fv": f"%{fv}%"},
+        )
+    if ft == "tag":
+        return (
+            "(%(fv)s = ANY(e.cuisine_tags) OR %(fv)s = ANY(e.food_tags))",
+            {"fv": fv},
+        )
+    raise ValueError(f"Unknown filter_type: {ft!r}")
+
+
+@app.route("/listen")
+def listen_index():
+    """Curated collections overview page."""
+    _init_db()
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT id, slug, title, subtitle, emoji, filter_type, filter_value, min_score
+                FROM collections
+                WHERE is_published = TRUE
+                ORDER BY sort_order
+            """)
+            cols_raw = [dict(r) for r in cur.fetchall()]
+
+            collections = []
+            for col in cols_raw:
+                try:
+                    where, params = _build_collection_query(col)
+                except ValueError:
+                    continue
+
+                # Count matching restaurants
+                cur.execute(f"""
+                    SELECT COUNT(*) AS cnt
+                    FROM restaurants r
+                    JOIN gemini_enrichments e ON e.place_id = r.place_id
+                    WHERE r.pipeline_status = 'complete' AND r.is_active = TRUE
+                      AND {where}
+                """, params)
+                col["count"] = cur.fetchone()["cnt"]
+
+                # First photo from the top restaurant in this collection
+                cur.execute(f"""
+                    SELECT r.place_id, r.thumbnail_url
+                    FROM restaurants r
+                    JOIN gemini_enrichments e ON e.place_id = r.place_id
+                    WHERE r.pipeline_status = 'complete' AND r.is_active = TRUE
+                      AND {where}
+                    ORDER BY e.curation_score DESC NULLS LAST
+                    LIMIT 1
+                """, params)
+                top = cur.fetchone()
+                col["photo"] = None
+                if top:
+                    col["photo"] = _photo_url(top["place_id"], top["thumbnail_url"])
+
+                collections.append(col)
+    finally:
+        conn.close()
+    return render_template("listen.html", collections=collections)
+
+
+@app.route("/listen/<slug>")
+def listen_collection(slug):
+    """Single curated collection page."""
+    _init_db()
+    sid = request.cookies.get("sid") or ""
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT id, slug, title, subtitle, emoji, filter_type, filter_value, min_score
+                FROM collections
+                WHERE slug = %s AND is_published = TRUE
+            """, (slug,))
+            col = cur.fetchone()
+        if not col:
+            return redirect("/listen")
+
+        col = dict(col)
+        where, params = _build_collection_query(col)
+        query_params = dict(params, sid=sid)
+
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(f"""
+                SELECT
+                    r.place_id, r.name, r.address, r.rating, r.rating_count,
+                    r.thumbnail_url, r.price_level,
+                    r.raw_data->>'type' AS place_type,
+                    e.cuisine_type, e.avg_price_pp, e.vibe, e.must_order,
+                    e.curation_score,
+                    e.family_score, e.date_score, e.friends_score, e.solo_score,
+                    e.relaxed_score, e.special_score, e.foodie_score,
+                    e.lingering_score, e.unique_score, e.outdoor_score, e.view_score,
+                    e.summary_de,
+                    sd.popular_for, sd.offerings, sd.atmosphere, sd.highlights,
+                    ea.slug AS article_slug,
+                    (ea.place_id IS NOT NULL) AS has_article,
+                    f.list_type AS fav_type,
+                    f.score     AS fav_score
+                FROM restaurants r
+                JOIN gemini_enrichments e ON e.place_id = r.place_id
+                LEFT JOIN serpapi_details sd ON sd.place_id = r.place_id
+                LEFT JOIN editorial_articles ea
+                    ON ea.place_id = r.place_id AND ea.is_published = TRUE
+                LEFT JOIN user_favorites f
+                    ON f.place_id = r.place_id AND f.session_id = %(sid)s
+                WHERE r.pipeline_status = 'complete' AND r.is_active = TRUE
+                  AND {where}
+                ORDER BY e.curation_score DESC NULLS LAST
+                LIMIT 10
+            """, query_params)
+            rows = cur.fetchall()
+
+        restaurants = []
+        for row in rows:
+            row = dict(row)
+            row = _enrich_row(row)
+            restaurants.append(row)
+
+        col["restaurant_count"] = len(restaurants)
+    finally:
+        conn.close()
+    return render_template("listen_collection.html", col=col, restaurants=restaurants)
+
+
 @app.route("/tipps")
 def tipps_index():
     """Editorial blog listing page."""

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ col.title }} · MallorcaEat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #f5f0e8; color: #0f0e0d; }
+    .card { transition: transform .2s ease, box-shadow .2s ease; }
+    .card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(15,14,13,.13); }
+    .score-hi  { background: #d4edda; color: #1a5c2e; }
+    .score-mid { background: #fff3cd; color: #7a5500; }
+    .score-lo  { background: #ebebeb; color: #555; }
+  </style>
+</head>
+<body class="min-h-screen font-sans">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-20 bg-cream/90 backdrop-blur border-b border-sand px-4 py-3 flex items-center gap-6">
+    <a href="/" class="font-serif text-lg font-bold text-ink">MallorcaEat</a>
+    <nav class="flex gap-5 items-center ml-2">
+      <a href="/"         class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Suche</a>
+      <a href="/listen"   class="font-mono text-[11px] text-terra font-medium border-b border-terra pb-0.5">Listen</a>
+      <a href="/tipps"    class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Tipps</a>
+      <a href="/discover" class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Entdecken</a>
+    </nav>
+  </header>
+
+  <!-- Collection Header -->
+  <div class="bg-ink text-cream px-5 pt-10 pb-8">
+    <div class="max-w-5xl mx-auto">
+      <!-- Breadcrumb -->
+      <div class="flex items-center gap-2 mb-5">
+        <a href="/listen" class="font-mono text-[11px] text-terra hover:text-rust transition">← Alle Listen</a>
+        <span class="font-mono text-[11px] text-cream/20">/</span>
+        <span class="font-mono text-[11px] text-cream/35">{{ col.title }}</span>
+      </div>
+
+      <div class="flex items-start gap-4">
+        <span class="text-4xl leading-none mt-1">{{ col.emoji }}</span>
+        <div>
+          <h1 class="font-serif text-3xl lg:text-4xl font-bold leading-tight mb-2">{{ col.title }}</h1>
+          {% if col.subtitle %}
+          <p class="font-sans text-cream/55 text-sm leading-relaxed max-w-xl">{{ col.subtitle }}</p>
+          {% endif %}
+          <p class="font-mono text-[11px] text-terra mt-3">Top {{ col.restaurant_count }} Restaurants</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Restaurant Grid -->
+  <main class="max-w-5xl mx-auto px-4 py-8 pb-20">
+
+    {% if not restaurants %}
+    <div class="text-center py-20">
+      <p class="font-mono text-sm text-ink/40">Keine Restaurants in dieser Sammlung gefunden.</p>
+      <a href="/listen" class="inline-block mt-4 font-mono text-xs text-terra hover:text-rust transition">← Zurück zu den Listen</a>
+    </div>
+
+    {% else %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      {% for r in restaurants %}
+
+      <div class="card group bg-white rounded-2xl overflow-hidden flex flex-col border border-sand cursor-pointer"
+           data-place-id="{{ r.place_id }}"
+           data-fav-type="{{ r.fav_type or '' }}"
+           onclick="location.href='/restaurant/{{ r.place_id }}'"
+           role="link" tabindex="0"
+           onkeydown="if(event.key==='Enter')location.href='/restaurant/{{ r.place_id }}'">
+
+        <!-- Image -->
+        <div class="relative h-52 overflow-hidden bg-gradient-to-br from-sand to-stone-100 group" id="c{{ loop.index }}" data-idx="0">
+          <!-- Emoji fallback -->
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0">
+            <span class="text-7xl opacity-20">{{ r.type_emoji }}</span>
+          </div>
+
+          <!-- Fav buttons -->
+          <div class="absolute top-2 left-2 flex gap-1.5 z-20" onclick="event.stopPropagation()">
+            <button data-fav-btn="want"
+                    onclick="toggleFav(event,'{{ r.place_id }}','want')"
+                    title="Da möchte ich hin"
+                    class="w-8 h-8 rounded-full flex items-center justify-center text-base backdrop-blur-sm transition-all
+                           {{ 'bg-terra text-cream shadow-md' if r.fav_type == 'want' else 'bg-ink/40 text-cream/70 hover:bg-terra/80 hover:text-cream' }}">
+              {{ '🤍' if r.fav_type != 'want' else '❤️' }}
+            </button>
+            <button data-fav-btn="been"
+                    onclick="toggleFav(event,'{{ r.place_id }}','been')"
+                    title="Da war ich"
+                    class="w-8 h-8 rounded-full flex items-center justify-center text-base backdrop-blur-sm transition-all
+                           {{ 'bg-sage text-cream shadow-md' if r.fav_type == 'been' else 'bg-ink/40 text-cream/70 hover:bg-sage/80 hover:text-cream' }}">
+              {{ '✓' if r.fav_type == 'been' else '○' }}
+            </button>
+            {% if r.fav_type == 'been' and r.fav_score is not none %}
+            <span data-fav-score
+                  class="bg-sage text-cream font-mono text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center shadow-md">
+              {{ r.fav_score }}
+            </span>
+            {% else %}
+            <span data-fav-score class="hidden bg-sage text-cream font-mono text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center shadow-md"></span>
+            {% endif %}
+          </div>
+
+          <!-- Unser Tipp badge -->
+          {% if r.has_article %}
+          <div class="absolute top-2 right-2 z-20" onclick="event.stopPropagation()">
+            <a href="/tipps/{{ r.article_slug }}"
+               class="flex items-center gap-1 bg-terra text-cream font-mono text-[9px] font-medium
+                      px-2 py-1 rounded-full shadow-md hover:bg-rust transition whitespace-nowrap">
+              ★ Unser Tipp
+            </a>
+          </div>
+          {% endif %}
+
+          {% if r.photos %}
+          <div class="flex h-full relative z-10" data-strip style="transition:transform .3s ease">
+            {% for photo in r.photos %}
+            <img src="{{ photo }}" alt="{{ r.name }}"
+                 class="shrink-0 object-cover"
+                 style="min-width:100%;width:100%"
+                 loading="lazy"
+                 onerror="this.style.display='none'">
+            {% endfor %}
+          </div>
+
+          {% if r.photos|length > 1 %}
+          <button onclick="event.stopPropagation();moveC('c{{ loop.index }}',-1)"
+                  class="absolute left-2 top-1/2 -translate-y-1/2
+                         w-7 h-7 rounded-full bg-ink/55 text-cream text-base leading-none
+                         flex items-center justify-center
+                         opacity-0 group-hover:opacity-100 transition-opacity hover:bg-ink/80 z-20">‹</button>
+          <button onclick="event.stopPropagation();moveC('c{{ loop.index }}',1)"
+                  class="absolute right-2 top-1/2 -translate-y-1/2
+                         w-7 h-7 rounded-full bg-ink/55 text-cream text-base leading-none
+                         flex items-center justify-center
+                         opacity-0 group-hover:opacity-100 transition-opacity hover:bg-ink/80 z-20">›</button>
+          <div class="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 pointer-events-none z-20" data-dots>
+            {% for photo in r.photos %}
+            <span class="block w-1.5 h-1.5 rounded-full bg-white transition-opacity
+                         {% if loop.first %}opacity-90{% else %}opacity-30{% endif %}"></span>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% endif %}
+
+          <!-- Price badge -->
+          {% if r.avg_price_pp and not r.has_article %}
+          <span class="absolute top-3 right-3 font-mono text-xs bg-ink/75 text-cream px-2.5 py-0.5 rounded-full backdrop-blur-sm z-20">€{{ r.avg_price_pp | int }}p.P.</span>
+          {% elif r.price_level and not r.has_article %}
+          <span class="absolute top-3 right-3 font-mono text-xs bg-ink/75 text-cream px-2.5 py-0.5 rounded-full backdrop-blur-sm z-20">{{ r.price_level }}</span>
+          {% endif %}
+        </div>
+
+        <!-- Body -->
+        <div class="p-5 flex flex-col flex-1">
+
+          <!-- Name + rating -->
+          <div class="flex items-start justify-between gap-2 mb-2">
+            <h3 class="font-serif text-xl font-bold text-ink leading-tight">{{ r.name }}</h3>
+            <div class="shrink-0">
+              <div class="flex items-center gap-1 bg-ink text-cream rounded-full pl-2.5 pr-2.5 py-0.5">
+                <span class="font-mono text-xs font-bold
+                  {% if (r.rating * 20)|round|int >= 94 %}text-green-400
+                  {% elif (r.rating * 20)|round|int >= 88 %}text-terra
+                  {% else %}text-cream/70{% endif %}">
+                  {{ (r.rating * 20)|round|int }}
+                </span>
+                <span class="font-mono text-[9px] text-cream/35">/100</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- City · type · count -->
+          <div class="flex items-center gap-2 flex-wrap mb-3">
+            {% if r.city %}
+            <span class="font-mono text-[10px] text-ink/45 flex items-center gap-0.5">
+              <svg class="inline w-2.5 h-2.5 opacity-50 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
+              </svg>
+              {{ r.city }}
+            </span>
+            {% endif %}
+            <span class="font-mono text-[10px] text-terra/70 border border-terra/20 bg-terra/5 px-2 py-0.5 rounded-full leading-none">{{ r.type_emoji }} {{ r.type_label }}</span>
+            <span class="font-mono text-[10px] text-ink/25 ml-auto">{{ r.rating_count | int }} ✦</span>
+          </div>
+
+          <!-- Vibe -->
+          {% if r.vibe %}
+          <p class="font-sans text-xs italic text-ink/50 leading-snug mb-3 line-clamp-2">„{{ r.vibe }}"</p>
+          {% endif %}
+
+          <!-- Tags -->
+          {% if r.atmosphere or r.highlights %}
+          <div class="flex flex-wrap gap-1 mb-3">
+            {% for tag in (r.atmosphere or [])[:3] %}
+            <span class="font-mono text-[10px] text-ink/45 bg-sand/50 border border-sand px-2 py-0.5 rounded-full">{{ tag }}</span>
+            {% endfor %}
+            {% for tag in (r.highlights or [])[:2] %}
+            <span class="font-mono text-[10px] text-sage/80 border border-sage/20 bg-sage/5 px-2 py-0.5 rounded-full">✦ {{ tag }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          <!-- Must order -->
+          {% if r.must_order %}
+          <div class="flex items-start gap-1.5 mt-auto pt-2">
+            <span class="text-terra text-xs shrink-0 mt-0.5">🍴</span>
+            <p class="font-sans text-xs text-ink/60 leading-snug">{{ r.must_order }}</p>
+          </div>
+          {% endif %}
+
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </main>
+
+  <!-- Photo carousel script (same as index) -->
+  <script>
+    function moveC(id, dir) {
+      const wrap = document.getElementById(id);
+      const strip = wrap.querySelector('[data-strip]');
+      const dots  = wrap.querySelectorAll('[data-dots] span');
+      const total = strip.children.length;
+      let idx = parseInt(wrap.dataset.idx || 0) + dir;
+      if (idx < 0) idx = total - 1;
+      if (idx >= total) idx = 0;
+      wrap.dataset.idx = idx;
+      strip.style.transform = `translateX(-${idx * 100}%)`;
+      dots.forEach((d, i) => d.style.opacity = i === idx ? '0.9' : '0.3');
+    }
+  </script>
+
+  <!-- Favorites script -->
+  <script>
+    async function toggleFav(event, placeId, favType) {
+      event.stopPropagation();
+      const card = document.querySelector(`[data-place-id="${placeId}"]`);
+      const currentFav = card ? card.dataset.favType : '';
+      const newFav = currentFav === favType ? '' : favType;
+
+      const res = await fetch('/api/fav', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ place_id: placeId, fav_type: newFav })
+      });
+      if (!res.ok) return;
+
+      if (card) {
+        card.dataset.favType = newFav;
+        const wantBtn = card.querySelector('[data-fav-btn="want"]');
+        const beenBtn = card.querySelector('[data-fav-btn="been"]');
+        if (wantBtn) {
+          wantBtn.className = wantBtn.className.replace(/(bg-terra text-cream shadow-md|bg-ink\/40 text-cream\/70 hover:bg-terra\/80 hover:text-cream)/g, '');
+          wantBtn.classList.add(...(newFav === 'want' ? ['bg-terra','text-cream','shadow-md'] : ['bg-ink/40','text-cream/70','hover:bg-terra/80','hover:text-cream']));
+          wantBtn.textContent = newFav === 'want' ? '❤️' : '🤍';
+        }
+        if (beenBtn) {
+          beenBtn.className = beenBtn.className.replace(/(bg-sage text-cream shadow-md|bg-ink\/40 text-cream\/70 hover:bg-sage\/80 hover:text-cream)/g, '');
+          beenBtn.classList.add(...(newFav === 'been' ? ['bg-sage','text-cream','shadow-md'] : ['bg-ink/40','text-cream/70','hover:bg-sage/80','hover:text-cream']));
+          beenBtn.textContent = newFav === 'been' ? '✓' : '○';
+        }
+      }
+    }
+  </script>
+
+</body>
+</html>
