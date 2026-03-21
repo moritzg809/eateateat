@@ -1681,6 +1681,14 @@ def index(city):
                 order = "array_position(%(semantic_ids)s::text[], t.place_id), t.rating DESC"
             elif sort == "quality":
                 order = "quality_score DESC NULLS LAST, t.rating DESC"
+            elif sort == "value":
+                # Value index: rewards high value_score AND low price.
+                # value_score (1-10) weighted 65%, inverse price tier 35%.
+                # Price normalised: 0€→10pts, 100€→0pts (capped).
+                order = """(
+                    COALESCE(e.value_score, 5.0) * 0.65
+                    + (10.0 - LEAST(COALESCE(e.avg_price_pp, 33)::float / 10.0, 10.0)) * 0.35
+                ) DESC NULLS LAST, t.rating DESC"""
             elif score_col:
                 order = f"e.{score_col} DESC, t.rating DESC"
             else:

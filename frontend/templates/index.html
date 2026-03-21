@@ -118,12 +118,17 @@
         {{ emoji }}&nbsp;{{ label }}
       </a>
       {% endfor %}
-      <!-- Qualitäts-Sort -->
+      <!-- Sort-Buttons -->
       <span class="shrink-0 w-px bg-cream/10 mx-1"></span>
       <a href="{{ url_for('index', city=city.slug, search=search, location=location, profile=profile_key or '', min_score=min_score, sort='quality', cuisine_filter=cuisine_filter) }}"
          class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
                 {{ 'border-terra bg-terra/20 text-terra' if sort == 'quality' else 'border-cream/20 text-cream/50 hover:border-terra/50 hover:text-terra/70' }}">
         ✦&nbsp;Qualität
+      </a>
+      <a href="{{ url_for('index', city=city.slug, search=search, location=location, profile=profile_key or '', min_score=min_score, sort='value', cuisine_filter=cuisine_filter) }}"
+         class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
+                {{ 'border-sage bg-sage/20 text-sage' if sort == 'value' else 'border-cream/20 text-cream/50 hover:border-sage/50 hover:text-sage/70' }}">
+        €&nbsp;Preis-Leistung
       </a>
       <!-- Favoriten-Filter -->
       <span class="shrink-0 w-px bg-cream/10 mx-1"></span>
@@ -302,6 +307,7 @@
       {{ total_filtered }} Restaurant{% if total_filtered != 1 %}s{% endif %}
       {% if total_pages > 1 %} · Seite {{ page }}/{{ total_pages }}{% endif %}
       {% if sort == 'quality' %} · ✦ Qualität{% endif %}
+      {% if sort == 'value' %} · € Preis-Leistung{% endif %}
       {% if profile_key %}{% for k, e, l in profiles %}{% if k == profile_key %} · {{ e }} {{ l }} ≥ {{ min_score }}{% endif %}{% endfor %}{% endif %}
       {% if search %} · „{{ search }}"{% endif %}
     </span>
@@ -433,6 +439,10 @@
             {% if sort == 'quality' and r.quality_score is not none %}
             <span class="font-mono text-[10px] bg-terra/10 text-terra border border-terra/25 px-2 py-0.5 rounded-full"
                   title="KI-Qualitäts-Score">✦</span>
+            {% endif %}
+            {% if sort == 'value' and r.value_score is not none %}
+            <span class="font-mono text-[10px] bg-sage/10 text-sage border border-sage/25 px-2 py-0.5 rounded-full"
+                  title="Preis-Leistungs-Score: {{ r.value_score }}/10{% if r.avg_price_pp %} · Ø {{ r.avg_price_pp }}€{% endif %}">€{{ r.value_score }}</span>
             {% endif %}
             <div class="flex items-center gap-1 bg-ink text-cream rounded-full pl-2.5 pr-2.5 py-0.5">
               <span class="font-mono text-xs font-bold
