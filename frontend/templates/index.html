@@ -69,54 +69,36 @@
     <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8">
       <div>
         <h1 class="font-serif text-[clamp(3.5rem,11vw,8rem)] leading-[.88] tracking-tight">
-          {{ city.emoji }}&nbsp;{{ city.name }}<br><em class="text-terra">Eat</em>
+          {{ city.name }}<br><em class="text-terra">Eat</em>
         </h1>
         <p class="mt-5 font-sans font-light text-cream/55 text-lg max-w-sm leading-relaxed">
           Die besten Tische der Stadt — kuratiert, bewertet, ehrlich.
         </p>
       </div>
 
-      <div class="flex flex-col items-end gap-5 shrink-0 pb-1">
-        <div class="flex gap-8">
-          <div>
-            <div class="font-serif text-5xl font-bold text-cream">{{ top_count }}</div>
-            <div class="font-mono text-[10px] text-cream/35 uppercase tracking-widest mt-1">Top Spots</div>
-          </div>
-          <div class="w-px bg-cream/10"></div>
-          <div>
-            <div class="font-serif text-5xl font-bold text-terra">{{ enriched_count }}</div>
-            <div class="font-mono text-[10px] text-cream/35 uppercase tracking-widest mt-1">KI-analysiert</div>
-          </div>
-          <div class="w-px bg-cream/10"></div>
-          <div>
-            <div class="font-serif text-5xl font-bold text-cream">{{ avg_rating }}</div>
-            <div class="font-mono text-[10px] text-cream/35 uppercase tracking-widest mt-1">Ø Bewertung</div>
-          </div>
-        </div>
-        <!-- Action buttons -->
-        <div class="flex gap-3">
-          <a href="{{ city_url('listen_index') }}"
-             class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
-                    px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
-            📋 Listen
-          </a>
-          <a href="{{ city_url('tipps_index') }}"
-             class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
-                    px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
-            ★ Tipps
-          </a>
-          <a href="{{ city_url('discover') }}"
-             class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
-                    px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
-            🧭 Entdecken
-          </a>
-          <a href="{{ city_url('restaurant_random') }}"
-             class="flex items-center gap-2 bg-terra hover:bg-rust text-cream font-mono text-sm
-                    px-5 py-2.5 rounded-full transition-colors shadow-lg hover:shadow-xl
-                    hover:-translate-y-0.5 transition-all duration-200">
-            🎲 Überrasch mich
-          </a>
-        </div>
+      <!-- Action buttons -->
+      <div class="flex flex-wrap gap-3 pb-1">
+        <a href="{{ city_url('listen_index') }}"
+           class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
+                  px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
+          📋 Listen
+        </a>
+        <a href="{{ city_url('tipps_index') }}"
+           class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
+                  px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
+          ★ Tipps
+        </a>
+        <a href="{{ city_url('discover') }}"
+           class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
+                  px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
+          🧭 Entdecken
+        </a>
+        <a href="{{ city_url('restaurant_random') }}"
+           class="flex items-center gap-2 bg-terra hover:bg-rust text-cream font-mono text-sm
+                  px-5 py-2.5 rounded-full transition-colors shadow-lg hover:shadow-xl
+                  hover:-translate-y-0.5 transition-all duration-200">
+          🎲 Überrasch mich
+        </a>
       </div>
     </div>
   </div>
