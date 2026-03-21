@@ -465,6 +465,9 @@
           </span>
           {% endif %}
           <span class="font-mono text-[10px] text-terra/70 border border-terra/20 bg-terra/5 px-2 py-0.5 rounded-full leading-none">{{ r.type_emoji }} {{ r.type_label }}</span>
+          {% if r.cuisine_type and r.cuisine_type | lower != r.type_label | lower %}
+          <span class="font-mono text-[10px] text-ink/45 border border-sand px-2 py-0.5 rounded-full leading-none">{{ r.cuisine_type }}</span>
+          {% endif %}
           <span class="font-mono text-[10px] text-ink/25 ml-auto">{{ r.rating_count | int }} ✦</span>
         </div>
 
