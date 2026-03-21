@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EatEatEat — Restaurantguides für Reisende mit Geschmack</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #f5f0e8; color: #0f0e0d; }
+    .city-card { transition: transform .2s ease, box-shadow .2s ease; }
+    .city-card:hover { transform: translateY(-4px); box-shadow: 0 20px 50px rgba(15,14,13,.18); }
+    .city-card:hover .city-img { transform: scale(1.06); }
+    .city-img { transition: transform .35s ease; }
+  </style>
+</head>
+<body class="min-h-screen font-sans">
+
+  <!-- Hero -->
+  <div class="bg-ink text-cream px-5 pt-16 pb-14">
+    <div class="max-w-4xl mx-auto text-center">
+      <h1 class="font-serif leading-[.82] tracking-tight"
+          style="font-size: clamp(5rem, 18vw, 10rem)">
+        Eat<br><em class="text-terra">Eat</em><br>Eat
+      </h1>
+      <p class="mt-8 font-sans font-light text-cream/55 text-lg max-w-md mx-auto leading-relaxed">
+        Kuratierte Restaurantguides für Reisende mit Geschmack.
+      </p>
+    </div>
+  </div>
+
+  <!-- City grid -->
+  <main class="max-w-5xl mx-auto px-4 py-12 pb-24">
+    <p class="font-mono text-[11px] text-terra tracking-widest uppercase mb-8 text-center">
+      Wähle dein Ziel
+    </p>
+
+    {% if not cities %}
+    <p class="font-mono text-sm text-ink/40 text-center py-20">Keine Städte verfügbar.</p>
+
+    {% else %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {% for c in cities %}
+      <a href="{{ url_for('index', city=c.slug) }}"
+         class="city-card block bg-white rounded-2xl overflow-hidden border border-sand/60 no-underline group">
+
+        <!-- Cover / emoji -->
+        <div class="h-52 overflow-hidden bg-gradient-to-br from-sand to-stone-100 relative flex items-center justify-center">
+          <span class="city-img text-[9rem] opacity-15 select-none">{{ c.emoji }}</span>
+
+          <!-- Gradient overlay -->
+          <div class="absolute inset-0 bg-gradient-to-t from-ink/65 via-ink/20 to-transparent"></div>
+
+          <!-- City name overlay -->
+          <div class="absolute bottom-0 left-0 right-0 p-5">
+            <div class="flex items-end justify-between gap-2">
+              <div>
+                <span class="text-3xl leading-none">{{ c.emoji }}</span>
+                <h2 class="font-serif text-2xl font-bold text-cream leading-snug mt-1">{{ c.name }}</h2>
+              </div>
+              <span class="font-mono text-[11px] text-cream/60 bg-ink/40 backdrop-blur-sm px-2.5 py-1 rounded-full whitespace-nowrap shrink-0 group-hover:bg-terra/80 group-hover:text-cream transition">
+                Entdecken →
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtitle -->
+        {% if c.subtitle %}
+        <div class="px-5 py-4">
+          <p class="font-sans text-xs text-ink/55 leading-relaxed">{{ c.subtitle }}</p>
+        </div>
+        {% endif %}
+
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-sand px-5 py-6 text-center">
+    <p class="font-mono text-[11px] text-ink/25">EatEatEat — Kuratierte Restaurantguides</p>
+  </footer>
+
+</body>
+</html>

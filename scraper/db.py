@@ -54,10 +54,11 @@ def save_cache(conn, query: str, location: str, search_type: str, response: dict
 # Restaurant helpers
 # ------------------------------------------------------------------
 
-def upsert_restaurant(conn, place: dict) -> int | None:
+def upsert_restaurant(conn, place: dict, city_id: int = 1) -> int | None:
     """
     Insert or update a restaurant from a Serper place object.
     Returns the restaurant row id, or None if place has no identifier.
+    city_id defaults to 1 (Mallorca) for backward compatibility.
     """
     place_id = place.get("placeId") or place.get("cid")
     if not place_id:
@@ -70,11 +71,11 @@ def upsert_restaurant(conn, place: dict) -> int | None:
             INSERT INTO restaurants (
                 place_id, name, address, rating, rating_count,
                 categories, phone, website, latitude, longitude,
-                thumbnail_url, price_level, raw_data
+                thumbnail_url, price_level, raw_data, city_id
             ) VALUES (
                 %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
-                %s, %s, %s
+                %s, %s, %s, %s
             )
             ON CONFLICT (place_id) DO UPDATE SET
                 name          = EXCLUDED.name,
@@ -90,6 +91,7 @@ def upsert_restaurant(conn, place: dict) -> int | None:
                 price_level   = EXCLUDED.price_level,
                 raw_data      = EXCLUDED.raw_data,
                 updated_at    = NOW()
+                -- NOTE: city_id intentionally NOT updated on conflict
             RETURNING id
             """,
             (
@@ -106,6 +108,7 @@ def upsert_restaurant(conn, place: dict) -> int | None:
                 place.get("thumbnailUrl"),
                 place.get("priceLevel"),
                 psycopg2.extras.Json(place),
+                city_id,
             ),
         )
         restaurant_id = cur.fetchone()[0]

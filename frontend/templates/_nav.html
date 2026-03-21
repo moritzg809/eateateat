@@ -1,0 +1,20 @@
+<header class="sticky top-0 z-20 bg-cream/90 backdrop-blur border-b border-sand px-4 py-3 flex items-center gap-6">
+  <a href="{{ city_url('index') }}" class="font-serif text-lg font-bold text-ink flex items-baseline gap-1.5">
+    EatEatEat
+    <span class="font-mono text-[11px] text-ink/35 font-normal">· {{ city.name }}</span>
+  </a>
+  <nav class="flex gap-5 items-center ml-2">
+    <a href="{{ city_url('index') }}"
+       class="font-mono text-[11px] transition
+              {% if active_nav == 'search' %}text-terra font-medium border-b border-terra pb-0.5{% else %}text-ink/50 hover:text-terra{% endif %}">Suche</a>
+    <a href="{{ city_url('listen_index') }}"
+       class="font-mono text-[11px] transition
+              {% if active_nav == 'listen' %}text-terra font-medium border-b border-terra pb-0.5{% else %}text-ink/50 hover:text-terra{% endif %}">Listen</a>
+    <a href="{{ city_url('tipps_index') }}"
+       class="font-mono text-[11px] transition
+              {% if active_nav == 'tipps' %}text-terra font-medium border-b border-terra pb-0.5{% else %}text-ink/50 hover:text-terra{% endif %}">Tipps</a>
+    <a href="{{ city_url('discover') }}"
+       class="font-mono text-[11px] transition
+              {% if active_nav == 'discover' %}text-terra font-medium border-b border-terra pb-0.5{% else %}text-ink/50 hover:text-terra{% endif %}">Entdecken</a>
+  </nav>
+</header>

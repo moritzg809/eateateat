@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ a.title }} · MallorcaEat</title>
+  <title>{{ a.title }} · EatEatEat · {{ city.name }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -82,16 +82,8 @@
 </head>
 <body class="min-h-screen font-sans text-ink">
 
-  <!-- Header -->
-  <header class="sticky top-0 z-20 bg-cream/90 backdrop-blur border-b border-sand px-4 py-3 flex items-center gap-6">
-    <a href="/" class="font-serif text-lg font-bold text-ink">MallorcaEat</a>
-    <nav class="flex gap-5 items-center ml-2">
-      <a href="/"         class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Suche</a>
-      <a href="/listen"   class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Listen</a>
-      <a href="/tipps"    class="font-mono text-[11px] text-terra font-medium border-b border-terra pb-0.5">Tipps</a>
-      <a href="/discover" class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Entdecken</a>
-    </nav>
-  </header>
+{% set active_nav = 'tipps' %}
+{% include "_nav.html" %}
 
   <!-- Hero Photo -->
   {% if a.photos %}
@@ -110,7 +102,7 @@
 
       <!-- Breadcrumb -->
       <div class="flex items-center gap-2 mb-6">
-        <a href="/tipps" class="font-mono text-[11px] text-terra hover:text-rust transition">← Alle Tipps</a>
+        <a href="{{ city_url('tipps_index') }}" class="font-mono text-[11px] text-terra hover:text-rust transition">← Alle Tipps</a>
         <span class="font-mono text-[11px] text-ink/30">/</span>
         <span class="font-mono text-[11px] text-ink/40">{{ a.name }}</span>
       </div>
@@ -211,7 +203,7 @@
         </div>
 
         <!-- CTA -->
-        <a href="/restaurant/{{ a.place_id }}"
+        <a href="{{ city_url('restaurant_page', place_id=a.place_id) }}"
            class="block w-full text-center bg-terra text-cream font-mono text-xs font-medium
                   py-2.5 rounded-xl hover:bg-rust transition">
           Zum Restaurant →
@@ -229,7 +221,7 @@
       <h3 class="font-serif text-xl font-bold text-ink mb-6">Mehr Tipps</h3>
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
         {% for m in a.more %}
-        <a href="/tipps/{{ m.slug }}"
+        <a href="{{ city_url('tipps_article', slug=m.slug) }}"
            class="more-card block bg-white rounded-xl overflow-hidden border border-sand/60 no-underline">
           <div class="h-36 overflow-hidden bg-sand/30">
             {% if m.photo %}

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Entdecken · MallorcaEat</title>
+  <title>Entdecken · EatEatEat · {{ city.name }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -58,15 +58,8 @@
 </head>
 <body class="min-h-screen font-sans text-ink">
 
-  <!-- Header -->
-  <header class="sticky top-0 z-20 bg-cream/90 backdrop-blur border-b border-sand px-4 py-3 flex items-center justify-between">
-    <a href="/" class="font-serif text-lg font-bold text-ink">MallorcaEat</a>
-    <nav class="flex gap-5 items-center ml-2">
-      <a href="/"        class="font-mono text-[11px] text-ink/50 hover:text-terra transition">← Suche</a>
-      <a href="/listen"  class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Listen</a>
-      <a href="/tipps"   class="font-mono text-[11px] text-ink/50 hover:text-terra transition">★ Tipps</a>
-    </nav>
-  </header>
+{% set active_nav = 'discover' %}
+{% include "_nav.html" %}
 
   <!-- Main -->
   <main class="max-w-md mx-auto px-4 pb-24">
@@ -107,6 +100,7 @@
   </main>
 
 <script>
+const CITY_SLUG = "{{ city.slug }}";
 let currentCard = null;
 
 // ── Init ─────────────────────────────────────────────────────────────────────
@@ -116,7 +110,7 @@ async function startDiscover() {
   document.getElementById('intro').classList.add('hidden');
   document.getElementById('flow').classList.remove('hidden');
 
-  const res  = await fetch('/api/discover/start', { method: 'POST' });
+  const res  = await fetch(`/${CITY_SLUG}/api/discover/start`, { method: 'POST' });
   currentCard = await res.json();
   renderCard(currentCard);
 }
@@ -130,7 +124,7 @@ async function sendAnswer(value, extra = {}) {
   const next_index = (currentCard.card_index ?? 0) + 1;
   const payload = { key: currentCard.key, answer: value, next_index, ...extra };
 
-  const res   = await fetch('/api/discover/answer', {
+  const res   = await fetch(`/${CITY_SLUG}/api/discover/answer`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(payload),
@@ -176,7 +170,7 @@ async function searchLocation() {
   if (!q) return;
   const btn = document.getElementById('btn-search');
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
-  const res  = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+  const res  = await fetch(`/${CITY_SLUG}/api/geocode?q=${encodeURIComponent(q)}`);
   const data = await res.json();
   if (btn) { btn.textContent = '🔍'; btn.disabled = false; }
   const err = document.getElementById('location-error');
@@ -368,7 +362,7 @@ function buildRestaurantCard(r) {
         ${r.cuisine_type ? `<p class="font-mono text-[10px] text-terra/70 mb-2">${r.cuisine_type}</p>` : ''}
         ${tags    ? `<div class="flex flex-wrap gap-1 mb-2">${tags}</div>` : ''}
         ${r.vibe  ? `<p class="font-sans text-xs text-ink/50 italic leading-relaxed line-clamp-2 mb-3">${r.vibe}</p>` : ''}
-        <a href="/restaurant/${r.place_id}"
+        <a href="/${CITY_SLUG}/restaurant/${r.place_id}"
            class="inline-block font-mono text-[11px] text-terra hover:text-rust transition font-medium">
           Details ansehen →
         </a>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ col.title }} · MallorcaEat</title>
+  <title>{{ col.title }} · EatEatEat · {{ city.name }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -40,23 +40,15 @@
 </head>
 <body class="min-h-screen font-sans">
 
-  <!-- Header -->
-  <header class="sticky top-0 z-20 bg-cream/90 backdrop-blur border-b border-sand px-4 py-3 flex items-center gap-6">
-    <a href="/" class="font-serif text-lg font-bold text-ink">MallorcaEat</a>
-    <nav class="flex gap-5 items-center ml-2">
-      <a href="/"         class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Suche</a>
-      <a href="/listen"   class="font-mono text-[11px] text-terra font-medium border-b border-terra pb-0.5">Listen</a>
-      <a href="/tipps"    class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Tipps</a>
-      <a href="/discover" class="font-mono text-[11px] text-ink/50 hover:text-terra transition">Entdecken</a>
-    </nav>
-  </header>
+{% set active_nav = 'listen' %}
+{% include "_nav.html" %}
 
   <!-- Collection Header -->
   <div class="bg-ink text-cream px-5 pt-10 pb-8">
     <div class="max-w-5xl mx-auto">
       <!-- Breadcrumb -->
       <div class="flex items-center gap-2 mb-5">
-        <a href="/listen" class="font-mono text-[11px] text-terra hover:text-rust transition">← Alle Listen</a>
+        <a href="{{ city_url('listen_index') }}" class="font-mono text-[11px] text-terra hover:text-rust transition">← Alle Listen</a>
         <span class="font-mono text-[11px] text-cream/20">/</span>
         <span class="font-mono text-[11px] text-cream/35">{{ col.title }}</span>
       </div>
@@ -80,7 +72,7 @@
     {% if not restaurants %}
     <div class="text-center py-20">
       <p class="font-mono text-sm text-ink/40">Keine Restaurants in dieser Sammlung gefunden.</p>
-      <a href="/listen" class="inline-block mt-4 font-mono text-xs text-terra hover:text-rust transition">← Zurück zu den Listen</a>
+      <a href="{{ city_url('listen_index') }}" class="inline-block mt-4 font-mono text-xs text-terra hover:text-rust transition">← Zurück zu den Listen</a>
     </div>
 
     {% else %}
@@ -90,9 +82,9 @@
       <div class="card group bg-white rounded-2xl overflow-hidden flex flex-col border border-sand cursor-pointer"
            data-place-id="{{ r.place_id }}"
            data-fav-type="{{ r.fav_type or '' }}"
-           onclick="location.href='/restaurant/{{ r.place_id }}'"
+           onclick="location.href=`/${CITY_SLUG}/restaurant/{{ r.place_id }}`"
            role="link" tabindex="0"
-           onkeydown="if(event.key==='Enter')location.href='/restaurant/{{ r.place_id }}'">
+           onkeydown="if(event.key==='Enter')location.href=`/${CITY_SLUG}/restaurant/{{ r.place_id }}`">
 
         <!-- Image -->
         <div class="relative h-52 overflow-hidden bg-gradient-to-br from-sand to-stone-100 group" id="c{{ loop.index }}" data-idx="0">
@@ -130,7 +122,7 @@
           <!-- Unser Tipp badge -->
           {% if r.has_article %}
           <div class="absolute top-2 right-2 z-20" onclick="event.stopPropagation()">
-            <a href="/tipps/{{ r.article_slug }}"
+            <a href="{{ city_url('tipps_article', slug=r.article_slug) }}"
                class="flex items-center gap-1 bg-terra text-cream font-mono text-[9px] font-medium
                       px-2 py-1 rounded-full shadow-md hover:bg-rust transition whitespace-nowrap">
               ★ Unser Tipp
@@ -245,6 +237,7 @@
 
   <!-- Photo carousel script (same as index) -->
   <script>
+    const CITY_SLUG = "{{ city.slug }}";
     function moveC(id, dir) {
       const wrap = document.getElementById(id);
       const strip = wrap.querySelector('[data-strip]');

@@ -12,7 +12,7 @@ import markdown2
 import numpy as np
 import psycopg2
 import psycopg2.extras
-from flask import Flask, render_template, request, jsonify, make_response, redirect, session
+from flask import Flask, render_template, request, jsonify, make_response, redirect, session, g, url_for, abort
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mallorcaeat-dev-key")
@@ -122,6 +122,42 @@ def _init_db():
         conn.commit()
     conn.close()
     _db_ready = True
+
+
+# ── City cache ────────────────────────────────────────────────────────────────
+_CITY_CACHE: tuple | None = None
+_CITY_CACHE_TTL = 600  # seconds
+
+
+def _load_cities(conn) -> dict[str, dict]:
+    """Return {slug: city_row} for all published cities. Cached for 10 min."""
+    global _CITY_CACHE
+    now = _time.time()
+    if _CITY_CACHE and now - _CITY_CACHE[0] < _CITY_CACHE_TTL:
+        return _CITY_CACHE[1]
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("""
+            SELECT id, slug, name, emoji, subtitle, country_code, sort_order
+            FROM cities
+            WHERE is_published = TRUE
+            ORDER BY sort_order
+        """)
+        result = {row["slug"]: dict(row) for row in cur.fetchall()}
+    _CITY_CACHE = (now, result)
+    return result
+
+
+def _get_city_or_404(city_slug: str) -> dict:
+    """Look up a published city by slug, abort(404) if not found."""
+    conn = get_db()
+    try:
+        cities = _load_cities(conn)
+    finally:
+        conn.close()
+    city = cities.get(city_slug)
+    if not city:
+        abort(404)
+    return city
 
 
 # ── Favorites API ────────────────────────────────────────────────────────────
@@ -290,7 +326,7 @@ def _load_top_cuisines(conn, limit: int = 20) -> list[tuple[str, int]]:
 
 # ── Recommender — candidate cache (module-level, refreshed every 5 min) ──────
 
-_CAND_CACHE: tuple[float, list[dict]] | None = None
+_CAND_CACHE: dict[int, tuple] = {}  # key: city_id
 _CAND_CACHE_TTL = 300  # seconds
 
 _SCORE_COLS = [
@@ -302,7 +338,7 @@ _SCORE_COLS = [
 _CRITIC_COLS = ["cuisine_score", "service_score", "value_score", "ambiance_score"]
 
 
-def _load_candidates(conn) -> list[dict]:
+def _load_candidates(conn, city_id: int | None = None) -> list[dict]:
     """Load all top restaurants with scores, embeddings and open_slots.
 
     Results are cached module-wide for _CAND_CACHE_TTL seconds so repeated
@@ -312,18 +348,23 @@ def _load_candidates(conn) -> list[dict]:
       row['emb_norm']     – normalised embedding vector   (or None)
     """
     global _CAND_CACHE
+    cache_key = city_id if city_id is not None else -1
     now = _time.time()
-    if _CAND_CACHE and now - _CAND_CACHE[0] < _CAND_CACHE_TTL:
-        return _CAND_CACHE[1]
+    if cache_key in _CAND_CACHE and now - _CAND_CACHE[cache_key][0] < _CAND_CACHE_TTL:
+        return _CAND_CACHE[cache_key][1]
+
+    city_filter = "AND r.city_id = %(city_id)s" if city_id is not None else ""
+    city_params = {"city_id": city_id} if city_id is not None else {}
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT
                 r.place_id,
                 r.name,
                 r.rating,
                 r.price_level,
                 r.thumbnail_url,
+                r.city_id,
                 res.raw_data->>'type'  AS place_type,
                 res.open_slots,
                 COALESCE(e.family_score,    0) AS family_score,
@@ -350,14 +391,15 @@ def _load_candidates(conn) -> list[dict]:
                 e.food_tags,
                 e.vibe,
                 emb.embedding,
-                COALESCE(sd.atmosphere, '{}') || COALESCE(sd.offerings, '{}') ||
-                COALESCE(sd.crowd,      '{}') || COALESCE(sd.highlights,'{}') AS tags
+                COALESCE(sd.atmosphere, '{{}}') || COALESCE(sd.offerings, '{{}}') ||
+                COALESCE(sd.crowd,      '{{}}') || COALESCE(sd.highlights,'{{}}') AS tags
             FROM  top_restaurants           r
             JOIN  restaurants             res ON res.place_id = r.place_id
             LEFT JOIN gemini_enrichments    e ON e.place_id   = r.place_id
             LEFT JOIN restaurant_embeddings emb ON emb.place_id = r.place_id
             LEFT JOIN serpapi_details      sd  ON sd.place_id  = r.place_id
-        """)
+            WHERE 1=1 {city_filter}
+        """, city_params)
         raw_rows = [dict(r) for r in cur.fetchall()]
 
     processed = []
@@ -398,7 +440,7 @@ def _load_candidates(conn) -> list[dict]:
 
         processed.append(row)
 
-    _CAND_CACHE = (_time.time(), processed)
+    _CAND_CACHE[cache_key] = (_time.time(), processed)
     return processed
 
 
@@ -596,7 +638,7 @@ def api_similar_v1(place_id):
                         COALESCE(e.lingering_score, 0) AS lingering_score,
                         COALESCE(e.unique_score,    0) AS unique_score,
                         COALESCE(e.dresscode_score, 0) AS dresscode_score,
-                        COALESCE(sd.atmosphere, '{}') || COALESCE(sd.offerings, '{}') ||
+                        sd.atmosphere || COALESCE(sd.offerings, '{}') ||
                         COALESCE(sd.crowd,      '{}') || COALESCE(sd.highlights,'{}') AS tags,
                         rs.raw_data->>'type' AS place_type,
                         tr.price_level
@@ -782,11 +824,70 @@ def _enrich_row(r: dict) -> dict:
     return r
 
 
+# ── Context processor ─────────────────────────────────────────────────────────
+
+@app.context_processor
+def inject_city_helpers():
+    """Inject city_url() helper into all templates."""
+    def city_url(endpoint: str, **kwargs) -> str:
+        city = g.get("current_city")
+        if city:
+            return url_for(endpoint, city=city["slug"], **kwargs)
+        return url_for(endpoint, **kwargs)
+    return {"city_url": city_url}
+
+
+# ── Landing page ──────────────────────────────────────────────────────────────
+
+@app.route("/")
+def landing():
+    """EatEatEat landing page — city selector."""
+    conn = get_db()
+    try:
+        cities = list(_load_cities(conn).values())
+    finally:
+        conn.close()
+    return render_template("landing.html", cities=cities)
+
+
+# ── 301 redirects for old URLs ────────────────────────────────────────────────
+
+@app.route("/restaurant/<place_id>")
+def restaurant_redirect(place_id):
+    return redirect(f"/mallorca/restaurant/{place_id}", code=301)
+
+@app.route("/similar/<place_id>")
+def similar_redirect(place_id):
+    return redirect(f"/mallorca/similar/{place_id}", code=301)
+
+@app.route("/listen")
+def listen_redirect():
+    return redirect("/mallorca/listen", code=301)
+
+@app.route("/listen/<slug>")
+def listen_collection_redirect(slug):
+    return redirect(f"/mallorca/listen/{slug}", code=301)
+
+@app.route("/tipps")
+def tipps_redirect():
+    return redirect("/mallorca/tipps", code=301)
+
+@app.route("/tipps/<slug>")
+def tipps_article_redirect(slug):
+    return redirect(f"/mallorca/tipps/{slug}", code=301)
+
+@app.route("/discover")
+def discover_redirect():
+    return redirect("/mallorca/discover", code=301)
+
+
 # ── Restaurant detail page ────────────────────────────────────────────────────
 
-@app.route("/restaurant/random")
-def restaurant_random():
+@app.route("/<city>/restaurant/random")
+def restaurant_random(city):
     """Redirect to a random enriched restaurant."""
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
     conn = get_db()
     try:
         with conn.cursor() as cur:
@@ -795,18 +896,21 @@ def restaurant_random():
                 FROM top_restaurants t
                 JOIN gemini_enrichments e ON e.place_id = t.place_id
                 WHERE e.family_score IS NOT NULL
+                  AND t.city_id = %(city_id)s
                 ORDER BY RANDOM()
                 LIMIT 1
-            """)
+            """, {"city_id": city_data["id"]})
             row = cur.fetchone()
     finally:
         conn.close()
-    return redirect(f"/restaurant/{row[0]}") if row else redirect("/")
+    return redirect(f"/{city}/restaurant/{row[0]}") if row else redirect(f"/{city}/")
 
 
-@app.route("/restaurant/<place_id>")
-def restaurant_page(place_id):
+@app.route("/<city>/restaurant/<place_id>")
+def restaurant_page(city, place_id):
     """Full detail page for a single restaurant."""
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
     _init_db()
     sid = request.cookies.get("sid") or ""
 
@@ -841,11 +945,12 @@ def restaurant_page(place_id):
                 LEFT JOIN user_favorites      f ON f.place_id  = t.place_id
                                                AND f.session_id = %(sid)s
                 WHERE t.place_id = %(pid)s
-            """, {"pid": place_id, "sid": sid})
+                  AND t.city_id = %(city_id)s
+            """, {"pid": place_id, "sid": sid, "city_id": city_data["id"]})
             row = cur.fetchone()
 
         if not row:
-            return render_template("restaurant.html", r=None, similar=[], prev_id=None, next_id=None, error="Restaurant nicht gefunden.")
+            return render_template("restaurant.html", r=None, similar=[], prev_id=None, next_id=None, city=city_data, error="Restaurant nicht gefunden.")
 
         # ── Prev / Next navigation (ordered by rating) ────────────────────
         with conn.cursor() as cur:
@@ -858,15 +963,16 @@ def restaurant_page(place_id):
                     FROM top_restaurants t
                     JOIN gemini_enrichments e ON e.place_id = t.place_id
                     WHERE e.family_score IS NOT NULL
+                      AND t.city_id = %(city_id)s
                 )
                 SELECT prev_id, next_id FROM ordered WHERE place_id = %(pid)s
-            """, {"pid": place_id})
+            """, {"pid": place_id, "city_id": city_data["id"]})
             nav = cur.fetchone()
         prev_id = nav[0] if nav else None
         next_id = nav[1] if nav else None
 
         # ── Similar restaurants (improved formula, top 6) ─────────────────
-        candidates  = _load_candidates(conn)
+        candidates  = _load_candidates(conn, city_id=city_data["id"])
         target_cand = next((c for c in candidates if c["place_id"] == place_id), None)
         similar_ids: list[str] = []
         sim_by_id:   dict[str, float] = {}
@@ -926,6 +1032,7 @@ def restaurant_page(place_id):
                                          next_id=next_id,
                                          profiles=PROFILES,
                                          article=article,
+                                         city=city_data,
                                          error=None))
     if not request.cookies.get("sid"):
         resp.set_cookie("sid", str(uuid.uuid4()), max_age=60*60*24*365, httponly=True, samesite="Lax")
@@ -934,19 +1041,21 @@ def restaurant_page(place_id):
 
 # ── Similar restaurants — full page view ─────────────────────────────────────
 
-@app.route("/similar/<place_id>")
-def similar_page(place_id):
+@app.route("/<city>/similar/<place_id>")
+def similar_page(city, place_id):
     """Full-page view: target restaurant + all similar restaurants (≥ 0.75)."""
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
     sid  = request.cookies.get("sid") or ""
 
     conn = get_db()
     try:
-        candidates = _load_candidates(conn)
+        candidates = _load_candidates(conn, city_id=city_data["id"])
 
         # Score using improved formula
         target = next((c for c in candidates if c["place_id"] == place_id), None)
         if not target or target["scores_norm"] is None:
-            return render_template("similar.html", target=None, restaurants=[], error="Restaurant nicht gefunden.")
+            return render_template("similar.html", target=None, restaurants=[], city=city_data, error="Restaurant nicht gefunden.")
 
         ranked      = _compute_similarity(target, candidates, place_id, threshold=0.55)
         similar_ids = [pid for _, pid in ranked]
@@ -998,6 +1107,7 @@ def similar_page(place_id):
                            target=target_row,
                            restaurants=similar_rows,
                            profiles=PROFILES,
+                           city=city_data,
                            error=None)
 
 
@@ -1110,28 +1220,32 @@ def _discover_pool_size(conn, filters: dict) -> int:
     return len(_discover_filter(all_rows, filters))
 
 
-_DISCOVER_CACHE: tuple[float, list] | None = None
+_DISCOVER_CACHE: dict[int, tuple] = {}  # key: city_id
 _DISCOVER_CACHE_TTL = 300
 
 
-def _discover_fetch_all(conn) -> list[dict]:
+def _discover_fetch_all(conn, city_id: int | None = None) -> list[dict]:
     global _DISCOVER_CACHE
     import time
     now = time.time()
-    if _DISCOVER_CACHE and now - _DISCOVER_CACHE[0] < _DISCOVER_CACHE_TTL:
-        return _DISCOVER_CACHE[1]
+    cache_key = city_id if city_id is not None else -1
+    if cache_key in _DISCOVER_CACHE and now - _DISCOVER_CACHE[cache_key][0] < _DISCOVER_CACHE_TTL:
+        return _DISCOVER_CACHE[cache_key][1]
+
+    city_filter = "AND r.city_id = %(city_id)s" if city_id is not None else ""
+    city_params = {"city_id": city_id} if city_id is not None else {}
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT r.place_id, r.name, r.address, r.rating, r.rating_count,
                    r.thumbnail_url, r.price_level, r.latitude, r.longitude,
                    ge.avg_price_pp, ge.cuisine_type, ge.cuisine_tags,
                    ge.interior_tags, ge.vibe, ge.outdoor_score, ge.view_score
             FROM restaurants r
             JOIN gemini_enrichments ge ON ge.place_id = r.place_id
-            WHERE r.is_active = TRUE
+            WHERE r.is_active = TRUE {city_filter}
             ORDER BY r.rating DESC, r.rating_count DESC NULLS LAST
-        """)
+        """, city_params)
         rows = [dict(r) for r in cur.fetchall()]
 
     for r in rows:
@@ -1140,7 +1254,7 @@ def _discover_fetch_all(conn) -> list[dict]:
         if r.get("latitude"):  r["latitude"]  = float(r["latitude"])
         if r.get("longitude"): r["longitude"] = float(r["longitude"])
 
-    _DISCOVER_CACHE = (now, rows)
+    _DISCOVER_CACHE[cache_key] = (now, rows)
     return rows
 
 
@@ -1230,8 +1344,10 @@ def _discover_result_card(rows: list[dict]) -> dict:
     return {"type": "results", "restaurants": results, "total": len(rows)}
 
 
-@app.route("/api/geocode")
-def api_geocode():
+@app.route("/<city>/api/geocode")
+def api_geocode(city):
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify({"error": "no query"}), 400
@@ -1276,23 +1392,29 @@ def api_geocode():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/discover")
-def discover():
-    return render_template("discover.html")
+@app.route("/<city>/discover")
+def discover(city):
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
+    return render_template("discover.html", city=city_data)
 
 
-@app.route("/api/discover/start", methods=["POST"])
-def api_discover_start():
+@app.route("/<city>/api/discover/start", methods=["POST"])
+def api_discover_start(city):
+    city_data = _get_city_or_404(city)
     conn = get_db()
-    total = len(_discover_fetch_all(conn))
+    total = len(_discover_fetch_all(conn, city_id=city_data["id"]))
     conn.close()
     session["discover_filters"] = {}
+    session["discover_city_id"] = city_data["id"]
     session.modified = True
     return jsonify(_discover_question_card(0, {}, total))
 
 
-@app.route("/api/discover/answer", methods=["POST"])
-def api_discover_answer():
+@app.route("/<city>/api/discover/answer", methods=["POST"])
+def api_discover_answer(city):
+    city_data = _get_city_or_404(city)
+    city_id = city_data["id"]
     req     = request.json or {}
     filters = session.get("discover_filters", {})
     key     = req.get("key")
@@ -1313,7 +1435,7 @@ def api_discover_answer():
     session.modified = True
 
     conn  = get_db()
-    rows  = _discover_fetch_all(conn)
+    rows  = _discover_fetch_all(conn, city_id=city_id)
     next_index = req.get("next_index", 0)
 
     if next_index >= len(_DISCOVER_QUESTIONS):
@@ -1328,8 +1450,10 @@ def api_discover_answer():
 
 # ── Main view ────────────────────────────────────────────────────────────────
 
-@app.route("/")
-def index():
+@app.route("/<city>/")
+def index(city):
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
     _init_db()
 
     # Session cookie (anonymous, persistent)
@@ -1371,6 +1495,7 @@ def index():
         "qs_no_price":  urlencode(_args_no_price),
         "top_cuisines": [],        # list[tuple[str, int]]
         "cuisine_neighbors": {},   # dict[str, list[str]]
+        "city": city_data,
         "error": None,
     }
 
@@ -1402,6 +1527,10 @@ def index():
             score_col  = f"{profile_key}_score" if profile_key else None
             conditions = ["1=1"]
             params: dict = {"sid": sid}
+
+            # City filter
+            conditions.append("t.city_id = %(city_id)s")
+            params["city_id"] = city_data["id"]
 
             if search:
                 # Search across name, cuisine_type and summary_de
@@ -1654,9 +1783,11 @@ def _build_collection_query(col: dict) -> tuple[str, dict]:
     raise ValueError(f"Unknown filter_type: {ft!r}")
 
 
-@app.route("/listen")
-def listen_index():
+@app.route("/<city>/listen")
+def listen_index(city):
     """Curated collections overview page."""
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
     _init_db()
     conn = get_db()
     try:
@@ -1665,8 +1796,9 @@ def listen_index():
                 SELECT id, slug, title, subtitle, emoji, filter_type, filter_value, min_score
                 FROM collections
                 WHERE is_published = TRUE
+                  AND city_id = %(city_id)s
                 ORDER BY sort_order
-            """)
+            """, {"city_id": city_data["id"]})
             cols_raw = [dict(r) for r in cur.fetchall()]
 
             collections = []
@@ -1682,8 +1814,9 @@ def listen_index():
                     FROM restaurants r
                     JOIN gemini_enrichments e ON e.place_id = r.place_id
                     WHERE r.pipeline_status = 'complete' AND r.is_active = TRUE
+                      AND r.city_id = %(city_id)s
                       AND {where}
-                """, params)
+                """, dict(params, city_id=city_data["id"]))
                 col["count"] = cur.fetchone()["cnt"]
 
                 # First photo from the top restaurant in this collection
@@ -1692,10 +1825,11 @@ def listen_index():
                     FROM restaurants r
                     JOIN gemini_enrichments e ON e.place_id = r.place_id
                     WHERE r.pipeline_status = 'complete' AND r.is_active = TRUE
+                      AND r.city_id = %(city_id)s
                       AND {where}
                     ORDER BY e.curation_score DESC NULLS LAST
                     LIMIT 1
-                """, params)
+                """, dict(params, city_id=city_data["id"]))
                 top = cur.fetchone()
                 col["photo"] = None
                 if top:
@@ -1704,12 +1838,14 @@ def listen_index():
                 collections.append(col)
     finally:
         conn.close()
-    return render_template("listen.html", collections=collections)
+    return render_template("listen.html", collections=collections, city=city_data)
 
 
-@app.route("/listen/<slug>")
-def listen_collection(slug):
+@app.route("/<city>/listen/<slug>")
+def listen_collection(city, slug):
     """Single curated collection page."""
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
     _init_db()
     sid = request.cookies.get("sid") or ""
     conn = get_db()
@@ -1719,14 +1855,15 @@ def listen_collection(slug):
                 SELECT id, slug, title, subtitle, emoji, filter_type, filter_value, min_score
                 FROM collections
                 WHERE slug = %s AND is_published = TRUE
-            """, (slug,))
+                  AND city_id = %s
+            """, (slug, city_data["id"]))
             col = cur.fetchone()
         if not col:
-            return redirect("/listen")
+            return redirect(f"/{city}/listen")
 
         col = dict(col)
         where, params = _build_collection_query(col)
-        query_params = dict(params, sid=sid)
+        query_params = dict(params, sid=sid, city_id=city_data["id"])
 
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(f"""
@@ -1753,6 +1890,7 @@ def listen_collection(slug):
                 LEFT JOIN user_favorites f
                     ON f.place_id = r.place_id AND f.session_id = %(sid)s
                 WHERE r.pipeline_status = 'complete' AND r.is_active = TRUE
+                  AND r.city_id = %(city_id)s
                   AND {where}
                 ORDER BY e.curation_score DESC NULLS LAST
                 LIMIT 10
@@ -1768,12 +1906,14 @@ def listen_collection(slug):
         col["restaurant_count"] = len(restaurants)
     finally:
         conn.close()
-    return render_template("listen_collection.html", col=col, restaurants=restaurants)
+    return render_template("listen_collection.html", col=col, restaurants=restaurants, city=city_data)
 
 
-@app.route("/tipps")
-def tipps_index():
+@app.route("/<city>/tipps")
+def tipps_index(city):
     """Editorial blog listing page."""
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
     _init_db()
     conn = get_db()
     try:
@@ -1788,8 +1928,9 @@ def tipps_index():
                 JOIN restaurants r ON r.place_id = a.place_id
                 LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
                 WHERE a.is_published = TRUE
+                  AND a.city_id = %(city_id)s
                 ORDER BY a.generated_at DESC
-            """)
+            """, {"city_id": city_data["id"]})
             articles = []
             for row in cur.fetchall():
                 row = dict(row)
@@ -1799,12 +1940,14 @@ def tipps_index():
                 articles.append(row)
     finally:
         conn.close()
-    return render_template("tipps.html", articles=articles)
+    return render_template("tipps.html", articles=articles, city=city_data)
 
 
-@app.route("/tipps/<slug>")
-def tipps_article(slug):
+@app.route("/<city>/tipps/<slug>")
+def tipps_article(city, slug):
     """Single editorial article page."""
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
     _init_db()
     conn = get_db()
     try:
@@ -1820,11 +1963,12 @@ def tipps_article(slug):
                 JOIN restaurants r ON r.place_id = a.place_id
                 LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
                 WHERE a.slug = %s AND a.is_published = TRUE
-            """, (slug,))
+                  AND a.city_id = %s
+            """, (slug, city_data["id"]))
             article = cur.fetchone()
 
         if not article:
-            return redirect("/tipps")
+            return redirect(f"/{city}/tipps")
 
         article = dict(article)
         article["city"] = _extract_city(article.get("address"))
@@ -1858,9 +2002,10 @@ def tipps_article(slug):
                 JOIN restaurants r ON r.place_id = a.place_id
                 LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
                 WHERE a.is_published = TRUE AND a.slug != %s
+                  AND a.city_id = %s
                 ORDER BY a.generated_at DESC
                 LIMIT 3
-            """, (slug,))
+            """, (slug, city_data["id"]))
             more = []
             for row in cur.fetchall():
                 row = dict(row)
@@ -1871,7 +2016,7 @@ def tipps_article(slug):
 
     finally:
         conn.close()
-    return render_template("tipps_article.html", a=article)
+    return render_template("tipps_article.html", a=article, city=city_data)
 
 
 if __name__ == "__main__":

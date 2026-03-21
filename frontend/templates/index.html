@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MallorcaEat</title>
+  <title>EatEatEat · {{ city.name }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -54,22 +54,25 @@
 </head>
 <body class="min-h-screen font-sans">
 
-<!-- ═══════════════════════ HEADER ═══════════════════════ -->
-<header class="bg-ink text-cream">
+{% set active_nav = 'search' %}
+{% include "_nav.html" %}
+
+<!-- ═══════════════════════ HERO ═══════════════════════ -->
+<div class="bg-ink text-cream">
   <div class="max-w-7xl mx-auto px-5 pt-10 pb-8">
 
     <div class="flex items-center justify-between mb-8 border-b border-cream/20 pb-4">
       <span class="font-mono text-xs tracking-widest text-cream/40 uppercase">Restaurant Guide</span>
-      <span class="font-mono text-xs text-cream/30">Mallorca · España</span>
+      <span class="font-mono text-xs text-cream/30">{{ city.name }} · {{ city.subtitle }}</span>
     </div>
 
     <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8">
       <div>
         <h1 class="font-serif text-[clamp(3.5rem,11vw,8rem)] leading-[.88] tracking-tight">
-          Mallorca<br><em class="text-terra">Eat</em>
+          {{ city.emoji }}&nbsp;{{ city.name }}<br><em class="text-terra">Eat</em>
         </h1>
         <p class="mt-5 font-sans font-light text-cream/55 text-lg max-w-sm leading-relaxed">
-          Die besten Tische der Insel — kuratiert, bewertet, ehrlich.
+          Die besten Tische der Stadt — kuratiert, bewertet, ehrlich.
         </p>
       </div>
 
@@ -92,22 +95,22 @@
         </div>
         <!-- Action buttons -->
         <div class="flex gap-3">
-          <a href="/listen"
+          <a href="{{ city_url('listen_index') }}"
              class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
                     px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
             📋 Listen
           </a>
-          <a href="/tipps"
+          <a href="{{ city_url('tipps_index') }}"
              class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
                     px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
             ★ Tipps
           </a>
-          <a href="/discover"
+          <a href="{{ city_url('discover') }}"
              class="flex items-center gap-2 bg-cream/10 hover:bg-cream/20 text-cream font-mono text-sm
                     px-5 py-2.5 rounded-full transition-all duration-200 border border-cream/20">
             🧭 Entdecken
           </a>
-          <a href="/restaurant/random"
+          <a href="{{ city_url('restaurant_random') }}"
              class="flex items-center gap-2 bg-terra hover:bg-rust text-cream font-mono text-sm
                     px-5 py-2.5 rounded-full transition-colors shadow-lg hover:shadow-xl
                     hover:-translate-y-0.5 transition-all duration-200">
@@ -117,37 +120,37 @@
       </div>
     </div>
   </div>
-</header>
+</div>
 
 <!-- ═══════════════════════ STICKY NAV FILTER ═══════════════════════ -->
 <div class="bg-ink border-t border-cream/10 sticky top-0 z-30">
   <div class="max-w-7xl mx-auto px-5">
     <div class="filter-scroll flex gap-2 overflow-x-auto py-3">
-      <a href="{{ url_for('index', search=search, location=location, cuisine_filter=cuisine_filter) }}"
+      <a href="{{ url_for('index', city=city.slug, search=search, location=location, cuisine_filter=cuisine_filter) }}"
          class="pill shrink-0 border border-cream/20 rounded-full px-4 py-1.5 font-mono text-xs text-cream/50 hover:border-cream/50 {{ 'active' if not profile_key and not view and not sort else '' }}">
         Alle
       </a>
       {% for key, emoji, label in profiles %}
-      <a href="{{ url_for('index', search=search, location=location, profile=key, min_score=min_score, cuisine_filter=cuisine_filter) }}"
+      <a href="{{ url_for('index', city=city.slug, search=search, location=location, profile=key, min_score=min_score, cuisine_filter=cuisine_filter) }}"
          class="pill shrink-0 border border-cream/20 rounded-full px-4 py-1.5 font-mono text-xs text-cream/50 hover:border-cream/50 {{ 'active' if profile_key == key else '' }}">
         {{ emoji }}&nbsp;{{ label }}
       </a>
       {% endfor %}
       <!-- Qualitäts-Sort -->
       <span class="shrink-0 w-px bg-cream/10 mx-1"></span>
-      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, sort='quality', cuisine_filter=cuisine_filter) }}"
+      <a href="{{ url_for('index', city=city.slug, search=search, location=location, profile=profile_key or '', min_score=min_score, sort='quality', cuisine_filter=cuisine_filter) }}"
          class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
                 {{ 'border-terra bg-terra/20 text-terra' if sort == 'quality' else 'border-cream/20 text-cream/50 hover:border-terra/50 hover:text-terra/70' }}">
         ✦&nbsp;Qualität
       </a>
       <!-- Favoriten-Filter -->
       <span class="shrink-0 w-px bg-cream/10 mx-1"></span>
-      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, view='want', cuisine_filter=cuisine_filter) }}"
+      <a href="{{ url_for('index', city=city.slug, search=search, location=location, profile=profile_key or '', min_score=min_score, view='want', cuisine_filter=cuisine_filter) }}"
          class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
                 {{ 'border-terra bg-terra/20 text-terra' if view == 'want' else 'border-cream/20 text-cream/50 hover:border-terra/50 hover:text-terra/70' }}">
         🤍&nbsp;Merkliste
       </a>
-      <a href="{{ url_for('index', search=search, location=location, profile=profile_key or '', min_score=min_score, view='been', cuisine_filter=cuisine_filter) }}"
+      <a href="{{ url_for('index', city=city.slug, search=search, location=location, profile=profile_key or '', min_score=min_score, view='been', cuisine_filter=cuisine_filter) }}"
          class="pill shrink-0 border rounded-full px-4 py-1.5 font-mono text-xs transition
                 {{ 'border-sage bg-sage/20 text-sage' if view == 'been' else 'border-cream/20 text-cream/50 hover:border-sage/50 hover:text-sage/70' }}">
         ✓&nbsp;War da
@@ -163,7 +166,7 @@
   <div class="flex items-center gap-1.5 bg-white rounded-xl px-3 py-2 shadow-sm border border-sand">
     <span class="font-mono text-[10px] text-ink/35 uppercase tracking-widest mr-1">Score ≥</span>
     {% for s in [6, 7, 8, 9] %}
-    <a href="{{ url_for('index', search=search, location=location, profile=profile_key, min_score=s, cuisine_filter=cuisine_filter, attr_filter=attr_filter) }}"
+    <a href="{{ url_for('index', city=city.slug, search=search, location=location, profile=profile_key, min_score=s, cuisine_filter=cuisine_filter, attr_filter=attr_filter) }}"
        class="font-mono text-xs px-2.5 py-1 rounded-lg transition
               {{ 'bg-ink text-cream' if min_score == s else 'text-ink/40 hover:bg-sand' }}">
       {{ s }}
@@ -202,7 +205,7 @@
       Los
     </button>
     {% if search or loc_lat %}
-    <a href="{{ url_for('index', profile=profile_key or '', min_score=min_score) }}"
+    <a href="{{ url_for('index', city=city.slug, profile=profile_key or '', min_score=min_score) }}"
        class="text-ink/25 hover:text-ink/60 text-sm px-1">✕</a>
     {% endif %}
   </form>
@@ -344,9 +347,9 @@
     <div class="card group bg-white rounded-2xl overflow-hidden flex flex-col border border-sand cursor-pointer {{ 'card-featured' if loop.first else '' }}"
          data-place-id="{{ r.place_id }}"
          data-fav-type="{{ r.fav_type or '' }}"
-         onclick="location.href='/restaurant/{{ r.place_id }}'"
+         onclick="location.href=`/${CITY_SLUG}/restaurant/{{ r.place_id }}`"
          role="link" tabindex="0"
-         onkeydown="if(event.key==='Enter')location.href='/restaurant/{{ r.place_id }}'">
+         onkeydown="if(event.key==='Enter')location.href=`/${CITY_SLUG}/restaurant/{{ r.place_id }}`">
 
       <!-- Image carousel -->
       <div class="card-img relative h-52 overflow-hidden bg-gradient-to-br from-sand to-stone-100 group" id="c{{ loop.index }}" data-idx="0">
@@ -384,7 +387,7 @@
         <!-- Unser Tipp Badge (top-right) -->
         {% if r.has_article %}
         <div class="absolute top-2 right-2 z-20" onclick="event.stopPropagation()">
-          <a href="/tipps/{{ r.article_slug }}"
+          <a href="{{ city_url('tipps_article', slug=r.article_slug) }}"
              class="flex items-center gap-1 bg-terra text-cream font-mono text-[9px] font-medium
                     px-2 py-1 rounded-full shadow-md hover:bg-rust transition whitespace-nowrap">
             ★ Unser Tipp
@@ -569,7 +572,7 @@
           </p>
           {% endif %}
           <div class="flex gap-3 shrink-0 items-center">
-            <a href="/restaurant/{{ r.place_id }}"
+            <a href="{{ city_url('restaurant_page', place_id=r.place_id) }}"
                onclick="event.stopPropagation()"
                class="font-mono text-[10px] text-ink/35 hover:text-terra uppercase tracking-wide transition-colors">
               Details ↗
@@ -684,7 +687,7 @@
 <!-- Footer -->
 <footer class="bg-ink text-cream/25 py-5 mt-4">
   <div class="max-w-7xl mx-auto px-5 flex items-center justify-between flex-wrap gap-3">
-    <span class="font-mono text-xs">MallorcaEat · {{ total }} Restaurants</span>
+    <span class="font-mono text-xs">EatEatEat · {{ city.name }} · {{ total }} Restaurants</span>
     <span class="font-serif italic text-cream/20 text-sm">La mejor mesa te espera.</span>
   </div>
 </footer>
@@ -725,6 +728,7 @@
 </div>
 
 <script>
+  const CITY_SLUG = "{{ city.slug }}";
   /* ── Carousel ────────────────────────────────────────────────────── */
   function moveC(id, dir) {
     const el = document.getElementById(id);
@@ -879,7 +883,7 @@ async function idxSearchLocation() {
   if (!q) return;
   const btn = document.getElementById('idx-btn-search');
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
-  const res  = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+  const res  = await fetch(`/${CITY_SLUG}/api/geocode?q=${encodeURIComponent(q)}`);
   const data = await res.json();
   if (btn) { btn.textContent = '🔍'; btn.disabled = false; }
   const err = document.getElementById('idx-loc-error');

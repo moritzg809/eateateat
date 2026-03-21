@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ähnlich wie {{ target.name if target else '…' }} — MallorcaEat</title>
+  <title>Ähnlich wie {{ target.name if target else '…' }} — EatEatEat · {{ city.name }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -47,8 +47,11 @@
 </head>
 <body class="min-h-screen font-sans">
 
-<!-- ═══ HEADER ═══════════════════════════════════════════════════════ -->
-<header class="bg-ink text-cream sticky top-0 z-40 shadow-lg">
+{% set active_nav = 'search' %}
+{% include "_nav.html" %}
+
+<!-- ═══ SIMILAR SUB-HEADER ════════════════════════════════════════════ -->
+<div class="bg-ink text-cream shadow-lg">
   <div class="max-w-7xl mx-auto px-5 py-4 flex items-center gap-4">
     <button onclick="history.back()"
             class="flex items-center gap-2 font-mono text-xs text-cream/50 hover:text-cream transition-colors shrink-0">
@@ -65,18 +68,18 @@
       </h1>
     </div>
     <div class="ml-auto flex items-center gap-4">
-      <a href="/listen" class="font-mono text-[10px] text-cream/30 hover:text-terra transition-colors shrink-0">
+      <a href="{{ city_url('listen_index') }}" class="font-mono text-[10px] text-cream/30 hover:text-terra transition-colors shrink-0">
         Listen
       </a>
-      <a href="/tipps" class="font-mono text-[10px] text-cream/30 hover:text-terra transition-colors shrink-0">
+      <a href="{{ city_url('tipps_index') }}" class="font-mono text-[10px] text-cream/30 hover:text-terra transition-colors shrink-0">
         ★ Tipps
       </a>
-      <a href="/" class="font-mono text-[10px] text-cream/30 hover:text-cream/60 transition-colors shrink-0 uppercase tracking-widest">
-        MallorcaEat
+      <a href="{{ city_url('index') }}" class="font-mono text-[10px] text-cream/30 hover:text-cream/60 transition-colors shrink-0 uppercase tracking-widest">
+        EatEatEat
       </a>
     </div>
   </div>
-</header>
+</div>
 
 <main class="max-w-7xl mx-auto px-5 py-8">
 
@@ -108,9 +111,9 @@
     ] %}
 
     <div class="card group bg-white rounded-2xl overflow-hidden flex flex-col border-2 border-ink shadow-md max-w-sm cursor-pointer"
-         onclick="location.href='/restaurant/{{ r.place_id }}'"
+         onclick="location.href=`/${CITY_SLUG}/restaurant/{{ r.place_id }}`"
          role="link" tabindex="0"
-         onkeydown="if(event.key==='Enter')location.href='/restaurant/{{ r.place_id }}'">
+         onkeydown="if(event.key==='Enter')location.href=`/${CITY_SLUG}/restaurant/{{ r.place_id }}`">
 
       <!-- Image carousel -->
       <div class="card-img relative h-52 overflow-hidden bg-gradient-to-br from-sand to-stone-100 group" id="ctarget" data-idx="0">
@@ -248,9 +251,9 @@
     <div class="card group bg-white rounded-2xl overflow-hidden flex flex-col border border-sand cursor-pointer {{ 'card-featured' if loop.first else '' }}"
          data-place-id="{{ r.place_id }}"
          data-fav-type="{{ r.fav_type or '' }}"
-         onclick="location.href='/restaurant/{{ r.place_id }}'"
+         onclick="location.href=`/${CITY_SLUG}/restaurant/{{ r.place_id }}`"
          role="link" tabindex="0"
-         onkeydown="if(event.key==='Enter')location.href='/restaurant/{{ r.place_id }}'">
+         onkeydown="if(event.key==='Enter')location.href=`/${CITY_SLUG}/restaurant/{{ r.place_id }}`">
 
       <!-- Image carousel -->
       <div class="card-img relative h-52 overflow-hidden bg-gradient-to-br from-sand to-stone-100 group" id="c{{ loop.index }}" data-idx="0">
@@ -345,7 +348,7 @@
         <div class="mt-4 pt-3 border-t border-sand flex items-center justify-between gap-2 flex-wrap">
           {% if r.address %}<p class="font-mono text-[10px] text-ink/30 leading-snug flex-1 min-w-0 truncate">📍 {{ r.address.split(',')[0] }}</p>{% endif %}
           <div class="flex gap-3 shrink-0 items-center" onclick="event.stopPropagation()">
-            <a href="/restaurant/{{ r.place_id }}"
+            <a href="{{ city_url('restaurant_page', place_id=r.place_id) }}"
                class="font-mono text-[10px] text-ink/35 hover:text-terra uppercase tracking-wide transition-colors">
               Details ↗
             </a>
@@ -395,6 +398,7 @@
 </div>
 
 <script>
+  const CITY_SLUG = "{{ city.slug }}";
   /* ── Carousel ────────────────────────────────────────────────────── */
   function moveC(id, dir) {
     const el = document.getElementById(id);

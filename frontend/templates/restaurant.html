@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% if r %}{{ r.name }} — MallorcaEat{% else %}Restaurant — MallorcaEat{% endif %}</title>
+  <title>{% if r %}{{ r.name }} — EatEatEat · {{ city.name }}{% else %}Restaurant — EatEatEat · {{ city.name }}{% endif %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -67,8 +67,11 @@
 </head>
 <body class="min-h-screen font-sans">
 
-<!-- ═══════════════════════ STICKY HEADER ═══════════════════════════════════ -->
-<header class="bg-ink text-cream sticky top-0 z-40 shadow-lg">
+{% set active_nav = 'search' %}
+{% include "_nav.html" %}
+
+<!-- ═══════════════════════ RESTAURANT SUB-HEADER ════════════════════════════ -->
+<div class="bg-ink text-cream shadow-lg">
   <div class="max-w-7xl mx-auto px-5 py-3 flex items-center gap-3">
 
     <!-- Back -->
@@ -95,7 +98,7 @@
     <!-- Prev / Next navigation -->
     <div class="flex items-center gap-1 shrink-0">
       {% if prev_id %}
-      <a href="/restaurant/{{ prev_id }}"
+      <a href="{{ city_url('restaurant_page', place_id=prev_id) }}"
          class="w-8 h-8 rounded-full flex items-center justify-center font-mono text-sm
                 bg-cream/8 text-cream/50 hover:bg-cream/15 hover:text-cream transition-colors"
          title="Vorheriges Restaurant">‹</a>
@@ -104,7 +107,7 @@
                    bg-cream/4 text-cream/20 cursor-not-allowed">‹</span>
       {% endif %}
       {% if next_id %}
-      <a href="/restaurant/{{ next_id }}"
+      <a href="{{ city_url('restaurant_page', place_id=next_id) }}"
          class="w-8 h-8 rounded-full flex items-center justify-center font-mono text-sm
                 bg-cream/8 text-cream/50 hover:bg-cream/15 hover:text-cream transition-colors"
          title="Nächstes Restaurant">›</a>
@@ -115,31 +118,31 @@
     </div>
 
     <!-- Überrasch mich -->
-    <a href="/restaurant/random"
+    <a href="{{ city_url('restaurant_page', place_id='random') }}"
        class="shrink-0 hidden sm:flex items-center gap-1.5 font-mono text-[10px] text-terra/70
               hover:text-terra transition-colors border border-terra/20 hover:border-terra/50
               rounded-full px-3 py-1.5">
       🎲 Überrasch mich
     </a>
 
-    <a href="/listen"
+    <a href="{{ city_url('listen_index') }}"
        class="shrink-0 hidden sm:flex items-center gap-1.5 font-mono text-[10px] text-terra/70
               hover:text-terra transition-colors border border-terra/20 hover:border-terra/50
               rounded-full px-3 py-1.5">
       Listen
     </a>
-    <a href="/tipps"
+    <a href="{{ city_url('tipps_index') }}"
        class="shrink-0 hidden sm:flex items-center gap-1.5 font-mono text-[10px] text-terra/70
               hover:text-terra transition-colors border border-terra/20 hover:border-terra/50
               rounded-full px-3 py-1.5">
       ★ Tipps
     </a>
 
-    <a href="/" class="ml-1 font-mono text-[10px] text-cream/25 hover:text-cream/60 transition-colors shrink-0 uppercase tracking-widest">
-      MallorcaEat
+    <a href="{{ city_url('index') }}" class="ml-1 font-mono text-[10px] text-cream/25 hover:text-cream/60 transition-colors shrink-0 uppercase tracking-widest">
+      EatEatEat
     </a>
   </div>
-</header>
+</div>
 
 <main class="max-w-7xl mx-auto px-4 sm:px-5 py-6 pb-20">
 
@@ -147,7 +150,7 @@
   <div class="bg-red-50 border border-red-200 rounded-2xl p-16 text-center mt-8">
     <div class="font-serif text-5xl mb-3 text-red-300">!</div>
     <h2 class="font-serif text-xl font-bold text-red-700">{{ error }}</h2>
-    <a href="/" class="mt-6 inline-block font-mono text-xs text-terra hover:text-rust">← Zur Übersicht</a>
+    <a href="{{ city_url('index') }}" class="mt-6 inline-block font-mono text-xs text-terra hover:text-rust">← Zur Übersicht</a>
   </div>
 
 {% elif r %}
@@ -256,9 +259,9 @@
               {{ r.city }}
             </span>
             {% endif %}
-            <a href="/?cuisine_filter={{ r.type_label | urlencode }}" class="font-mono text-xs text-terra/80 border border-terra/20 bg-terra/5 px-2.5 py-0.5 rounded-full hover:bg-terra/15 transition">{{ r.type_emoji }} {{ r.type_label }}</a>
+            <a href="{{ city_url('index', cuisine_filter=r.type_label) }}" class="font-mono text-xs text-terra/80 border border-terra/20 bg-terra/5 px-2.5 py-0.5 rounded-full hover:bg-terra/15 transition">{{ r.type_emoji }} {{ r.type_label }}</a>
             {% if r.cuisine_type %}
-            <a href="/?cuisine_filter={{ r.cuisine_type | urlencode }}" class="font-mono text-xs text-ink/40 bg-sand/60 border border-sand px-2.5 py-0.5 rounded-full hover:bg-sand transition">{{ r.cuisine_type }}</a>
+            <a href="{{ city_url('index', cuisine_filter=r.cuisine_type) }}" class="font-mono text-xs text-ink/40 bg-sand/60 border border-sand px-2.5 py-0.5 rounded-full hover:bg-sand transition">{{ r.cuisine_type }}</a>
             {% endif %}
           </div>
         </div>
@@ -314,7 +317,7 @@
         </div>
       </div>
       <div class="px-5 py-4">
-        <a href="/tipps/{{ article.slug }}"
+        <a href="{{ city_url('tipps_article', slug=article.slug) }}"
            class="inline-flex items-center gap-1.5 font-mono text-xs text-terra hover:text-rust transition font-medium">
           Vollständigen Artikel lesen
           <span>→</span>
@@ -383,7 +386,7 @@
       <h3 class="font-mono text-[10px] uppercase tracking-widest text-ink/35 mb-3">🍽 Küche</h3>
       <div class="flex flex-wrap gap-2">
         {% for tag in r.cuisine_tags %}
-        <a href="/?attr_filter={{ tag | urlencode }}" class="font-mono text-xs bg-terra/8 text-terra/80 border border-terra/15 px-3 py-1 rounded-full hover:bg-terra/15 transition">{{ tag }}</a>
+        <a href="{{ city_url('index', attr_filter=tag) }}" class="font-mono text-xs bg-terra/8 text-terra/80 border border-terra/15 px-3 py-1 rounded-full hover:bg-terra/15 transition">{{ tag }}</a>
         {% endfor %}
       </div>
     </div>
@@ -394,7 +397,7 @@
       <h3 class="font-mono text-[10px] uppercase tracking-widest text-ink/35 mb-3">🏛 Interieur</h3>
       <div class="flex flex-wrap gap-2">
         {% for tag in r.interior_tags %}
-        <a href="/?attr_filter={{ tag | urlencode }}" class="font-mono text-xs bg-ink/5 text-ink/55 border border-ink/10 px-3 py-1 rounded-full hover:bg-ink/10 transition">{{ tag }}</a>
+        <a href="{{ city_url('index', attr_filter=tag) }}" class="font-mono text-xs bg-ink/5 text-ink/55 border border-ink/10 px-3 py-1 rounded-full hover:bg-ink/10 transition">{{ tag }}</a>
         {% endfor %}
       </div>
     </div>
@@ -405,7 +408,7 @@
       <h3 class="font-mono text-[10px] uppercase tracking-widest text-ink/35 mb-3">📸 Optik</h3>
       <div class="flex flex-wrap gap-2">
         {% for tag in r.food_tags %}
-        <a href="/?attr_filter={{ tag | urlencode }}" class="font-mono text-xs bg-sage/8 text-sage/70 border border-sage/15 px-3 py-1 rounded-full hover:bg-sage/15 transition">{{ tag }}</a>
+        <a href="{{ city_url('index', attr_filter=tag) }}" class="font-mono text-xs bg-sage/8 text-sage/70 border border-sage/15 px-3 py-1 rounded-full hover:bg-sage/15 transition">{{ tag }}</a>
         {% endfor %}
       </div>
     </div>
@@ -627,7 +630,7 @@
   <!-- Horizontal scrollable strip -->
   <div class="sim-strip flex gap-4 overflow-x-auto pb-3">
     {% for s in similar %}
-    <a href="/restaurant/{{ s.place_id }}"
+    <a href="{{ city_url('restaurant_page', place_id=s.place_id) }}"
        class="sim-card shrink-0 bg-white border border-sand rounded-xl overflow-hidden flex flex-col shadow-sm"
        style="width: 220px;">
 
@@ -729,6 +732,7 @@
 /* ══════════════════════════════════════════════════════════════
    DATA injected from Flask
 ══════════════════════════════════════════════════════════════ */
+const CITY_SLUG = "{{ city.slug }}";
 const PHOTOS  = {{ r.photos | tojson if r else '[]' }};
 const PREV_ID = {{ prev_id | tojson }};
 const NEXT_ID = {{ next_id | tojson }};
@@ -791,12 +795,12 @@ document.addEventListener('keydown', e => {
   }
   if (e.key === 'ArrowLeft') {
     if (lb) { moveLightbox(-1); return; }
-    if (PREV_ID) location.href = `/restaurant/${PREV_ID}`;
+    if (PREV_ID) location.href = `/${CITY_SLUG}/restaurant/${PREV_ID}`;
     return;
   }
   if (e.key === 'ArrowRight') {
     if (lb) { moveLightbox(1); return; }
-    if (NEXT_ID) location.href = `/restaurant/${NEXT_ID}`;
+    if (NEXT_ID) location.href = `/${CITY_SLUG}/restaurant/${NEXT_ID}`;
     return;
   }
 });
