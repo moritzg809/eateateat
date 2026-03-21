@@ -366,16 +366,6 @@
           {% endif %}
         </div>
 
-        <!-- Unser Tipp Badge (top-right) -->
-        {% if r.has_article %}
-        <div class="absolute top-2 right-2 z-20" onclick="event.stopPropagation()">
-          <a href="{{ city_url('tipps_article', slug=r.article_slug) }}"
-             class="flex items-center gap-1 bg-terra text-cream font-mono text-[9px] font-medium
-                    px-2 py-1 rounded-full shadow-md hover:bg-rust transition whitespace-nowrap">
-            ★ Unser Tipp
-          </a>
-        </div>
-        {% endif %}
 
         {% if r.photos %}
         <!-- Photo strip: all images in a flex row, JS moves translateX -->
@@ -455,6 +445,17 @@
             </div>
           </div>
         </div>
+
+        <!-- Unser Tipp -->
+        {% if r.has_article %}
+        <div class="mb-2" onclick="event.stopPropagation()">
+          <a href="{{ city_url('tipps_article', slug=r.article_slug) }}"
+             class="inline-flex items-center gap-1.5 bg-terra/10 text-terra border border-terra/25
+                    font-mono text-[10px] font-medium px-2.5 py-1 rounded-full hover:bg-terra hover:text-cream transition whitespace-nowrap">
+            ★ Unser Tipp
+          </a>
+        </div>
+        {% endif %}
 
         <!-- City · type · review count -->
         <div class="flex items-center gap-2 flex-wrap mb-3">
