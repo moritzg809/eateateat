@@ -1848,6 +1848,9 @@ def index(city):
 
 def _md_to_html(md: str, preview_only: bool = False) -> str:
     """Convert markdown to HTML. If preview_only, return first 3 paragraphs."""
+    # Strip Gemini Deep Research citation markers: [cite: 1], [cite: 1, 2], etc.
+    md = re.sub(r"\s*\[cite:\s*[\d,\s]+\]", "", md)
+
     if preview_only:
         paragraphs = []
         for line in md.splitlines():
@@ -1859,7 +1862,7 @@ def _md_to_html(md: str, preview_only: bool = False) -> str:
             if len(paragraphs) >= 3:
                 break
         md = "\n\n".join(paragraphs)
-    return markdown2.markdown(md, extras=["fenced-code-blocks", "strike"])
+    return markdown2.markdown(md, extras=["fenced-code-blocks", "strike", "tables"])
 
 
 def _build_collection_query(col: dict) -> tuple[str, dict]:
