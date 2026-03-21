@@ -39,6 +39,7 @@ import compute_curation_score
 import detail_scrape
 import enrich as enricher
 import gem_qualify
+import jina_embed as jina_embedder
 import scrape
 from config import LOCATIONS, SEARCH_TERMS, CITIES
 from db import (
@@ -58,7 +59,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "promote", "curation", "verify"]
+ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "promote", "curation", "jina_embed", "verify"]
 
 # Quality thresholds (must match config)
 MIN_RATING  = 4.5
@@ -498,6 +499,11 @@ def main():
 
     if "curation" in stages:
         stage_curation(dry_run=args.dry_run)
+
+    if "jina_embed" in stages:
+        logger.info("[JINA_EMBED] Starting…")
+        jina_embedder.run(limit=args.limit, dry_run=args.dry_run)
+        logger.info("[JINA_EMBED] Done.")
 
     if "verify" in stages:
         stage_verify(conn, dry_run=args.dry_run, max_age_days=args.verify_days, limit=args.limit)

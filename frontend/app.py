@@ -124,6 +124,64 @@ def _init_db():
     _db_ready = True
 
 
+# ── Jina semantic search ──────────────────────────────────────────────────────
+
+_JINA_MODEL = None   # lazy-loaded on first search request
+
+def _get_jina_model():
+    """Load Jina v5 model on first call; cache globally for the process lifetime."""
+    global _JINA_MODEL
+    if _JINA_MODEL is None:
+        from sentence_transformers import SentenceTransformer  # noqa: PLC0415
+        _JINA_MODEL = SentenceTransformer(
+            "jinaai/jina-embeddings-v5-text-small-retrieval",
+            trust_remote_code=True,
+        )
+    return _JINA_MODEL
+
+
+_SEARCH_EMBED_CACHE: dict[int, tuple] = {}  # city_id → (place_ids, matrix, loaded_at)
+_SEARCH_EMBED_TTL = 600  # 10 min
+
+
+def _load_search_embeddings(conn, city_id: int):
+    """Return (place_ids, L2-normalised matrix) for a city, cached 10 min.
+
+    Returns None if no Jina embeddings exist yet (falls back to ILIKE search).
+    """
+    now = _time.time()
+    cached = _SEARCH_EMBED_CACHE.get(city_id)
+    if cached and now - cached[2] < _SEARCH_EMBED_TTL:
+        return cached[0], cached[1]
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT re.place_id, re.jina_embedding
+            FROM   restaurant_embeddings re
+            JOIN   top_restaurants t ON t.place_id = re.place_id
+            WHERE  t.city_id = %s
+              AND  re.jina_embedding IS NOT NULL
+            ORDER BY t.rating DESC
+            """,
+            (city_id,),
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        return None
+
+    place_ids = [r["place_id"] for r in rows]
+    matrix = np.array([r["jina_embedding"] for r in rows], dtype=np.float32)
+
+    # L2-normalise (vectors should already be normalised from scraper, but be safe)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    matrix = matrix / np.where(norms == 0, 1.0, norms)
+
+    _SEARCH_EMBED_CACHE[city_id] = (place_ids, matrix, now)
+    return place_ids, matrix
+
+
 # ── City cache ────────────────────────────────────────────────────────────────
 _CITY_CACHE: tuple | None = None
 _CITY_CACHE_TTL = 600  # seconds
@@ -1533,13 +1591,39 @@ def index(city):
             params["city_id"] = city_data["id"]
 
             if search:
-                # Search across name, cuisine_type and summary_de
-                conditions.append("""(
-                    t.name         ILIKE %(search)s OR
-                    e.cuisine_type ILIKE %(search)s OR
-                    e.summary_de   ILIKE %(search)s
-                )""")
-                params["search"] = f"%{search}%"
+                # Semantic search via Jina embeddings (falls back to ILIKE if no embeddings yet)
+                embed_result = _load_search_embeddings(conn, city_data["id"])
+                if embed_result:
+                    try:
+                        model = _get_jina_model()
+                        q_vec = model.encode(
+                            [search],
+                            task="retrieval.query",
+                            normalize_embeddings=True,
+                        )[0]
+                        place_ids_all, matrix = embed_result
+                        scores = matrix @ q_vec          # cosine similarity (N,)
+                        top_k  = 200
+                        top_idxs    = np.argsort(scores)[::-1][:top_k]
+                        semantic_ids = [place_ids_all[i] for i in top_idxs]
+                        conditions.append("t.place_id = ANY(%(semantic_ids)s)")
+                        params["semantic_ids"] = semantic_ids
+                    except Exception:
+                        # Fallback to ILIKE on any model error
+                        conditions.append("""(
+                            t.name         ILIKE %(search)s OR
+                            e.cuisine_type ILIKE %(search)s OR
+                            e.summary_de   ILIKE %(search)s
+                        )""")
+                        params["search"] = f"%{search}%"
+                else:
+                    # No Jina embeddings available yet → ILIKE fallback
+                    conditions.append("""(
+                        t.name         ILIKE %(search)s OR
+                        e.cuisine_type ILIKE %(search)s OR
+                        e.summary_de   ILIKE %(search)s
+                    )""")
+                    params["search"] = f"%{search}%"
             if loc_lat and loc_lon:
                 try:
                     _lat = float(loc_lat); _lon = float(loc_lon)
