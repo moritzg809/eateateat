@@ -73,11 +73,14 @@ MIN_REVIEWS = 100
 def stage_search(conn, dry_run: bool = False, force: bool = False, city_cfg: dict | None = None):
     """Run Serper searches for queries that are due (> 6 months)."""
     logger.info("[SEARCH] Starting…")
-    terms     = city_cfg["search_terms"] if city_cfg else SEARCH_TERMS
-    locations = city_cfg["locations"]    if city_cfg else LOCATIONS
-    city_id   = city_cfg["db_id"]        if city_cfg else 1
+    terms           = city_cfg["search_terms"]        if city_cfg else SEARCH_TERMS
+    locations       = city_cfg["locations"]           if city_cfg else LOCATIONS
+    city_id         = city_cfg["db_id"]               if city_cfg else 1
+    search_country  = city_cfg.get("search_country")  if city_cfg else None
+    search_language = city_cfg.get("search_language") if city_cfg else None
     init_pipeline_runs(conn, terms, locations)
-    scrape.run(dry_run=dry_run, force=force, search_terms=terms, locations=locations, city_id=city_id)
+    scrape.run(dry_run=dry_run, force=force, search_terms=terms, locations=locations,
+               city_id=city_id, search_country=search_country, search_language=search_language)
     logger.info("[SEARCH] Done.")
 
 
@@ -440,27 +443,42 @@ def main():
     if invalid:
         ap.error(f"Unknown stage(s): {invalid}. Valid: {ALL_STAGES}")
 
-    # Resolve city config
-    city_slug = args.city or "mallorca"
-    if city_slug not in CITIES:
-        ap.error(f"Unknown city '{city_slug}'. Available: {', '.join(CITIES.keys())}")
-    city_cfg = CITIES[city_slug]
+    # Resolve which cities to run
+    city_arg = args.city or "mallorca"
+    if city_arg == "all":
+        city_slugs = list(CITIES.keys())
+    elif city_arg in CITIES:
+        city_slugs = [city_arg]
+    else:
+        ap.error(f"Unknown city '{city_arg}'. Available: all, " + ", ".join(CITIES.keys()))
 
     conn = get_connection()
 
     logger.info("=" * 60)
     logger.info("EatEatEat pipeline")
-    logger.info("  city        : %s (db_id=%d)", city_slug, city_cfg["db_id"])
+    logger.info("  cities      : %s", ", ".join(city_slugs))
     logger.info("  stages      : %s", ", ".join(stages))
     logger.info("  dry-run     : %s", args.dry_run)
     logger.info("  daily-limit : %d enrichments/day", args.daily_limit)
     logger.info("=" * 60)
 
-    if "search" in stages:
-        stage_search(conn, dry_run=args.dry_run, force=args.force_search, city_cfg=city_cfg)
+    # ── Per-city stages (search + qualify) ───────────────────────────────────
+    for city_slug in city_slugs:
+        city_cfg = CITIES[city_slug]
+        if len(city_slugs) > 1:
+            logger.info("")
+            logger.info("── City: %s ──────────────────────────────────────────", city_slug.upper())
 
-    if "qualify" in stages:
-        stage_qualify(conn, dry_run=args.dry_run, city_cfg=city_cfg)
+        if "search" in stages:
+            stage_search(conn, dry_run=args.dry_run, force=args.force_search, city_cfg=city_cfg)
+
+        if "qualify" in stages:
+            stage_qualify(conn, dry_run=args.dry_run, city_cfg=city_cfg)
+
+    # ── City-agnostic stages (run once across all cities) ─────────────────────
+    if len(city_slugs) > 1:
+        logger.info("")
+        logger.info("── Cross-city stages ─────────────────────────────────────")
 
     if "enrich" in stages:
         stage_enrich(conn, dry_run=args.dry_run, limit=args.limit, daily_limit=args.daily_limit)

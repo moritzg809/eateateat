@@ -26,16 +26,18 @@ def _get_rotator() -> KeyRotator:
     return _rotator
 
 
-def search_maps(query: str, location: str, retries: int = 5) -> dict:
+def search_maps(query: str, location: str, retries: int = 5,
+                gl: str | None = None, hl: str | None = None) -> dict:
     """
     Call the Serper /maps endpoint and return the parsed JSON response.
     Rotates API key on 429. Raises on unrecoverable errors after `retries` attempts.
+    gl/hl: city-specific country/language codes; fall back to config defaults.
     """
     rotator = _get_rotator()
     payload = {
         "q": f"{query} {location}",
-        "gl": SEARCH_COUNTRY,
-        "hl": SEARCH_LANGUAGE,
+        "gl": gl or SEARCH_COUNTRY,
+        "hl": hl or SEARCH_LANGUAGE,
         "num": RESULTS_PER_CALL,
     }
 

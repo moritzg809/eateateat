@@ -62,7 +62,8 @@ def _download_thumbnail(place_id: str, url: str) -> None:
 
 def run(dry_run: bool = False, force: bool = False, init_only: bool = False,
         search_terms: list | None = None, locations: list | None = None,
-        city_id: int = 1) -> None:
+        city_id: int = 1, search_country: str | None = None,
+        search_language: str | None = None) -> None:
     """Run the search stage. Accepts city-specific overrides from pipeline.py."""
     _terms     = search_terms or SEARCH_TERMS
     _locations = locations    or LOCATIONS
@@ -82,7 +83,8 @@ def run(dry_run: bool = False, force: bool = False, init_only: bool = False,
         logger.info("FORCE mode — running all %d combinations", len(combinations))
     else:
         due_rows = get_due_pipeline_runs(conn)
-        combinations = [(row[0], row[1]) for row in due_rows]
+        valid_combos = {(term, loc) for term in _terms for loc in _locations}
+        combinations = [(row[0], row[1]) for row in due_rows if (row[0], row[1]) in valid_combos]
         if not combinations:
             logger.info("All search queries are fresh (< 6 months old). Nothing to do.")
             logger.info("Use --force to re-run anyway.")
@@ -118,7 +120,7 @@ def run(dry_run: bool = False, force: bool = False, init_only: bool = False,
             action = "FORCE-REFRESH" if (cached_data and force) else "CALLING "
             logger.info("%s %s  '%s' in '%s'", prefix, action, term, location)
             try:
-                data = search_maps(term, location)
+                data = search_maps(term, location, gl=search_country, hl=search_language)
                 cache_id = save_cache(conn, term, location, "maps", data)
                 stats["api_calls"] += 1
                 logger.info("         -> saved to cache id=%d", cache_id)

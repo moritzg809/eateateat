@@ -72,7 +72,20 @@ Verbotene Wörter/Phrasen:
 Verbotene Satzmuster (gilt auch für ähnliche Formulierungen):
 "Es ist...", "Das Restaurant bietet...", "Das Restaurant ist...",
 "[Name des Restaurants] bietet...", "[Name des Restaurants] ist...",
-"Hier findet man...", "Hier trifft man..."
+"Hier findet man...", "Hier trifft man...",
+"... die für ihre/seine ... bekannt ist/sind ...",
+"... bekannt für ihre/seine ...",
+"... eine Kombination aus ... und ...",
+"... verbindet ... mit ...",
+"... setzt auf ...", "... überzeugt mit ...",
+"... die ... vereint", "... wo ... auf ... trifft"
+
+Verbotene Satzstruktur — Füllrelativsätze:
+Jeder Nebensatz der mit "die/der/das/wo ... ist/sind/wird" endet und nur beschreibt
+was das Restaurant *hat*, statt was man *erlebt*, ist verboten.
+NEIN: "... Gerichte, die auf saisonalen Produkten basieren."
+NEIN: "... eine Küche, die mediterrane und japanische Einflüsse vereint."
+JA: konkrete Beobachtung, konkretes Detail, kein erklärendes Relativpronomen.
 ━━━━━━━━━━━━━━━━━━━━━━━━
 
 ── summary_de ──
@@ -133,7 +146,8 @@ JA:  "Abends ab 21 Uhr kommen Paare mit Reservierung, Kerzenlicht auf Naturstein
 
 ⚠️  SELBST-CHECK: Lies deine drei Texte bevor du antwortest nochmal durch.
 Enthält einer eine verbotene Phrase oder einen verbotenen Satzbeginn? → Schreib ihn neu.
-Könnte ein Satz für ein anderes Restaurant genauso stimmen? → Ersetze ihn durch etwas Spezifisches.
+Könnte ein Satz — mit minimalem Austausch des Namens — für ein anderes Restaurant in dieser Stadt genauso stehen? → Schreib ihn komplett neu.
+Gilt das besonders für: Sätze mit "bekannt für", "verbindet X mit Y", "setzt auf", Relativsätze die nur beschreiben was das Restaurant *hat*. → Alle raus.
 
 SCHRITT 3 — Zahlen vergeben:
 
@@ -363,7 +377,13 @@ def fetch_pending(
         return cur.fetchall()
 
 
-def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None = None):
+def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None = None,
+                    maps_used: bool = True):
+    """Persist a Gemini enrichment result.
+
+    maps_used=False when the call used url_context instead of google_maps — those
+    enrichments don't consume Google Maps quota and are excluded from the daily cap.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -378,7 +398,7 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
                 audience_type,  avg_price_pp,
                 cuisine_type,   cuisine_tags,
                 interior_tags,  food_tags,
-                summary_de, must_order, vibe, gemini_model, raw_response
+                summary_de, must_order, vibe, gemini_model, raw_response, maps_used
             ) VALUES (
                 %s,
                 %s, %s, %s, %s,
@@ -390,7 +410,7 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
                 %s, %s,
                 %s, %s,
                 %s, %s,
-                %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s
             )
             ON CONFLICT (place_id) DO UPDATE SET
                 family_score    = EXCLUDED.family_score,
@@ -426,6 +446,7 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
                 vibe            = EXCLUDED.vibe,
                 gemini_model    = EXCLUDED.gemini_model,
                 raw_response    = EXCLUDED.raw_response,
+                maps_used       = EXCLUDED.maps_used,
                 enriched_at     = NOW()
             """,
             (
@@ -442,6 +463,7 @@ def save_enrichment(conn, place_id: str, data: dict, raw_response: dict | None =
                 data.get("summary_de"), data.get("must_order"), data.get("vibe"),
                 MODEL,
                 psycopg2.extras.Json(raw_response) if raw_response else None,
+                maps_used,
             ),
         )
     conn.commit()
@@ -495,22 +517,29 @@ def run(limit=None, min_rating=4.5, min_reviews=100, dry_run=False, force=False,
             logger.info("%s WOULD ENRICH  %s  %s", prefix, name, f"[{website}]" if website else "")
             continue
 
-        logger.info("%s %s  %s", prefix, name, f"🌐 {website}" if website else "")
+        # url_context is used when a website is available; google_maps otherwise.
+        # Only google_maps calls count towards the 500/day Google Maps quota cap.
+        used_maps = not bool(website)
+        logger.info("%s %s  %s", prefix, name,
+                    f"🌐 {website}" if website else "🗺 google_maps")
         try:
             data, raw_response = call_gemini(name, address, lat, lng, website)
-            save_enrichment(conn, place_id, data, raw_response)
+            save_enrichment(conn, place_id, data, raw_response, maps_used=used_maps)
             set_pipeline_status(conn, place_id, "enriched")
             stats["ok"] += 1
             logger.info("         -> ✓  %s", data.get("vibe", "")[:90])
             time.sleep(0.3)  # gentle pacing
         except ModelUncertainError as exc:
             logger.warning("         -> ⚠  Modell unsicher, übersprungen: %s", exc)
+            conn.rollback()  # reset any aborted transaction before saving fallback row
             # Save a null row so this restaurant no longer appears as "pending"
             # and doesn't permanently block gem_qualify. Re-run with --force to retry.
-            save_enrichment(conn, place_id, {}, {"model": MODEL, "text": None, "uncertain": True})
+            save_enrichment(conn, place_id, {}, {"model": MODEL, "text": None, "uncertain": True},
+                            maps_used=used_maps)
             stats["skipped"] = stats.get("skipped", 0) + 1
         except Exception as exc:
             logger.error("         -> ✗  %s", exc)
+            conn.rollback()  # reset aborted transaction so the next restaurant can proceed
             stats["errors"] += 1
 
     conn.close()

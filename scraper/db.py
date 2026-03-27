@@ -302,10 +302,15 @@ def fetch_for_verify(conn, max_age_days: int = 730) -> list:
 
 
 def count_today_enrichments(conn) -> int:
-    """Return number of Gemini enrichments done today (for daily cap)."""
+    """Return number of Gemini enrichments done today that used Google Maps (for daily cap).
+
+    Only maps_used=TRUE rows count — url_context-only enrichments don't consume
+    Google Maps quota and are therefore excluded from the 500/day cap.
+    """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT count(*) FROM gemini_enrichments WHERE enriched_at::date = CURRENT_DATE"
+            "SELECT count(*) FROM gemini_enrichments"
+            " WHERE enriched_at::date = CURRENT_DATE AND maps_used = TRUE"
         )
         return cur.fetchone()[0]
 
