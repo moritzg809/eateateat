@@ -76,7 +76,7 @@ log "═════════════════════════
 
 "$DOCKER" compose --profile pipeline run --rm pipeline \
   --city all \
-  --stages enrich,completeness,gem_qualify,critic_enrich,details,photos,website,classify,promote,curation,jina_embed,verify \
+  --stages enrich,completeness,gem_qualify,critic_enrich,details,photos,website,classify,promote,curation,jina_embed,cuisine_dna,verify \
   ${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}
 
 log "════════════════════════════════════════"
