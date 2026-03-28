@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Unsere Tipps · EatEatEat · {{ city.name }}</title>
+  <title>Unsere Tipps · EatEatEat{% if city %} · {{ city.name }}{% endif %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -42,6 +42,10 @@
 {% set active_nav = 'tipps' %}
 {% include "_nav.html" %}
 
+<div class="flex min-h-screen">
+{% include "_sidebar.html" %}
+<div class="flex-1 min-w-0">
+
   <!-- Hero -->
   <div class="max-w-5xl mx-auto px-4 pt-14 pb-8 text-center">
     <p class="font-mono text-[11px] text-terra tracking-widest uppercase mb-3">Redaktion</p>
@@ -63,7 +67,7 @@
 
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {% for a in articles %}
-      <a href="{{ city_url('tipps_article', slug=a.slug) }}" class="article-card block bg-white rounded-2xl overflow-hidden border border-sand/60 no-underline">
+      <a href="{{ url_for('tipps_article', city=a.city_slug if a.city_slug is defined else city.slug, slug=a.slug) }}" class="article-card block bg-white rounded-2xl overflow-hidden border border-sand/60 no-underline">
 
         <!-- Photo -->
         <div class="overflow-hidden h-52 bg-sand/40">
@@ -122,6 +126,9 @@
 
     {% endif %}
   </main>
+
+</div><!-- flex-1 -->
+</div><!-- flex -->
 
 </body>
 </html>

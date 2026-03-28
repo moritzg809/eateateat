@@ -110,6 +110,10 @@
 {% set active_nav = 'tipps' %}
 {% include "_nav.html" %}
 
+<div class="flex min-h-screen">
+{% include "_sidebar.html" %}
+<div class="flex-1 min-w-0">
+
   <!-- Hero Photo -->
   {% if a.photos %}
   <div class="w-full h-72 lg:h-96 overflow-hidden bg-sand/40">
@@ -291,6 +295,9 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
   </script>
   {% endif %}
+
+</div><!-- flex-1 -->
+</div><!-- flex -->
 
 </body>
 </html>

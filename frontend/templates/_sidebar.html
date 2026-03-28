@@ -1,0 +1,28 @@
+<!-- Left cities sidebar -->
+<aside class="hidden lg:flex flex-col justify-center w-40 shrink-0 min-h-screen py-10 px-3">
+
+  <nav class="flex flex-col gap-0.5">
+    <a href="{{ url_for('tipps_all') }}"
+       class="text-center py-2.5 px-3 rounded-md font-serif text-base transition
+              {% if city is not defined or city is none %}
+                bg-ink text-cream
+              {% else %}
+                text-ink/45 hover:text-ink hover:bg-sand/50
+              {% endif %}">
+      Alle Städte
+    </a>
+
+    {% for c in all_cities %}
+    <a href="{{ url_for('tipps_index', city=c.slug) }}"
+       class="text-center py-2.5 px-3 rounded-md font-serif text-base transition
+              {% if city is defined and city and city.slug == c.slug %}
+                bg-ink text-cream
+              {% else %}
+                text-ink/45 hover:text-ink hover:bg-sand/50
+              {% endif %}">
+      {{ c.name }}
+    </a>
+    {% endfor %}
+  </nav>
+
+</aside>

@@ -886,13 +886,23 @@ def _enrich_row(r: dict) -> dict:
 
 @app.context_processor
 def inject_city_helpers():
-    """Inject city_url() helper into all templates."""
+    """Inject city_url() helper and all_cities list into all templates."""
     def city_url(endpoint: str, **kwargs) -> str:
         city = g.get("current_city")
         if city:
             return url_for(endpoint, city=city["slug"], **kwargs)
         return url_for(endpoint, **kwargs)
-    return {"city_url": city_url}
+
+    try:
+        conn = get_db()
+        try:
+            all_cities = list(_load_cities(conn).values())
+        finally:
+            conn.close()
+    except Exception:
+        all_cities = []
+
+    return {"city_url": city_url, "all_cities": all_cities}
 
 
 # ── Landing page ──────────────────────────────────────────────────────────────
@@ -926,9 +936,6 @@ def listen_redirect():
 def listen_collection_redirect(slug):
     return redirect(f"/mallorca/listen/{slug}", code=301)
 
-@app.route("/tipps")
-def tipps_redirect():
-    return redirect("/mallorca/tipps", code=301)
 
 @app.route("/tipps/<slug>")
 def tipps_article_redirect(slug):
@@ -2018,6 +2025,40 @@ def listen_collection(city, slug):
     return render_template("listen_collection.html", col=col, restaurants=restaurants, city=city_data)
 
 
+@app.route("/tipps")
+def tipps_all():
+    """Editorial blog listing — all cities combined."""
+    _init_db()
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT
+                    a.slug, a.title, a.teaser, a.generated_at,
+                    r.place_id, r.name, r.address, r.rating, r.rating_count,
+                    r.thumbnail_url,
+                    e.cuisine_type, e.avg_price_pp, e.vibe,
+                    c.slug AS city_slug
+                FROM editorial_articles a
+                JOIN restaurants r ON r.place_id = a.place_id
+                JOIN cities c ON c.id = a.city_id
+                LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
+                WHERE a.is_published = TRUE
+                  AND c.is_published = TRUE
+                ORDER BY a.generated_at DESC
+            """)
+            articles = []
+            for row in cur.fetchall():
+                row = dict(row)
+                row["city"] = _extract_city(row.get("address"))
+                pid = row["place_id"]
+                row["photo"] = _photo_url(pid, row.get("thumbnail_url"))
+                articles.append(row)
+    finally:
+        conn.close()
+    return render_template("tipps.html", articles=articles, city=None)
+
+
 @app.route("/<city>/tipps")
 def tipps_index(city):
     """Editorial blog listing page."""
@@ -2032,9 +2073,11 @@ def tipps_index(city):
                     a.slug, a.title, a.teaser, a.generated_at,
                     r.place_id, r.name, r.address, r.rating, r.rating_count,
                     r.thumbnail_url,
-                    e.cuisine_type, e.avg_price_pp, e.vibe
+                    e.cuisine_type, e.avg_price_pp, e.vibe,
+                    c.slug AS city_slug
                 FROM editorial_articles a
                 JOIN restaurants r ON r.place_id = a.place_id
+                JOIN cities c ON c.id = a.city_id
                 LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
                 WHERE a.is_published = TRUE
                   AND a.city_id = %(city_id)s

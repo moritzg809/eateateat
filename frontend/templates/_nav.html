@@ -2,11 +2,12 @@
   <div class="flex items-center gap-3">
     <a href="{{ url_for('landing') }}" class="font-mono text-[11px] text-ink/30 hover:text-terra transition" title="Alle Städte">← Städte</a>
     <span class="text-ink/15">|</span>
-    <a href="{{ city_url('index') }}" class="font-serif text-lg font-bold text-ink flex items-baseline gap-1.5">
+    <a href="{{ city_url('index') if city else url_for('landing') }}" class="font-serif text-lg font-bold text-ink flex items-baseline gap-1.5">
       EatEatEat
-      <span class="font-mono text-[11px] text-ink/35 font-normal">· {{ city.name }}</span>
+      {% if city %}<span class="font-mono text-[11px] text-ink/35 font-normal">· {{ city.name }}</span>{% endif %}
     </a>
   </div>
+  {% if city %}
   <nav class="flex gap-5 items-center ml-2">
     <a href="{{ city_url('index') }}"
        class="font-mono text-[11px] transition
@@ -21,4 +22,5 @@
        class="font-mono text-[11px] transition
               {% if active_nav == 'discover' %}text-terra font-medium border-b border-terra pb-0.5{% else %}text-ink/50 hover:text-terra{% endif %}">Entdecken</a>
   </nav>
+  {% endif %}
 </header>
