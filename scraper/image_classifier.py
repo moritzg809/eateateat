@@ -74,8 +74,11 @@ _NEGATIVE_PROMPTS = [
 ]
 
 # Thresholds: score = avg(pos_sims) - avg(neg_sims)
-_GOOD_THRESHOLD  =  0.02   # score > this → GOOD
-_BAD_THRESHOLD   = -0.02   # score < this → BAD
+# Calibrated via 100-image human annotation (2026-03-28):
+#   score ≥ -0.02 → nearly always GOOD in human review
+#   score <  -0.02 → bad/unsure
+_GOOD_THRESHOLD  = -0.02   # score > this → GOOD
+_BAD_THRESHOLD   = -0.05   # score < this → BAD
                             # in between   → UNSURE
 
 
@@ -86,8 +89,8 @@ _model: SentenceTransformer | None = None
 def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
-        logger.info("Loading CLIP model (clip-ViT-B-32)…")
-        _model = SentenceTransformer("clip-ViT-B-32")
+        logger.info("Loading CLIP model (clip-ViT-L-14)…")
+        _model = SentenceTransformer("clip-ViT-L-14")
         logger.info("Model ready.")
     return _model
 
