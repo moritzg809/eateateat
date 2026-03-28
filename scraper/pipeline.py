@@ -39,6 +39,7 @@ import compute_curation_score
 import detail_scrape
 import enrich as enricher
 import gem_qualify
+import cuisine_city_dna
 import jina_embed as jina_embedder
 import scrape
 from config import LOCATIONS, SEARCH_TERMS, CITIES
@@ -59,7 +60,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "promote", "curation", "jina_embed", "verify"]
+ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "promote", "curation", "jina_embed", "cuisine_dna", "verify"]
 
 # Quality thresholds (must match config)
 MIN_RATING  = 4.5
@@ -522,6 +523,17 @@ def main():
         logger.info("[JINA_EMBED] Starting…")
         jina_embedder.run(limit=args.limit, dry_run=args.dry_run)
         logger.info("[JINA_EMBED] Done.")
+
+    if "cuisine_dna" in stages:
+        logger.info("[CUISINE_DNA] Computing city cuisine labels…")
+        cuisine_city_dna.run(
+            top_n=cuisine_city_dna.TOP_N,
+            min_count=cuisine_city_dna.MIN_COUNT,
+            max_cities=cuisine_city_dna.MAX_CITIES,
+            pca_dims=cuisine_city_dna.PCA_DIMS,
+            write=True,
+        )
+        logger.info("[CUISINE_DNA] Done.")
 
     if "verify" in stages:
         stage_verify(conn, dry_run=args.dry_run, max_age_days=args.verify_days, limit=args.limit)

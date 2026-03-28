@@ -339,13 +339,33 @@ def _cuisine_covers(existing: str, candidate: str, neighbors: dict) -> bool:
     return len(shorter & longer) >= len(shorter)
 
 
-def _load_top_cuisines(conn, limit: int = 20) -> list[tuple[str, int]]:
-    """Return the top-N *deduplicated* cuisine_types by restaurant count.
+def _load_top_cuisines(conn, limit: int = 20, city_id: int | None = None) -> list[tuple[str, int]]:
+    """Return the top-N cuisine filter options for a given city.
 
-    Fetches 5× more candidates, then greedily drops types that are
-    semantically covered by an already-selected (higher-ranked) type.
-    Falls back to empty list on any error.
+    Tries city_cuisine_labels first (pre-computed wPMI + clustering).
+    Falls back to the old global approach when the table is empty or missing.
     """
+    # ── Fast path: pre-computed city DNA ──────────────────────────────────────
+    if city_id is not None:
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT label, restaurant_n
+                    FROM city_cuisine_labels
+                    WHERE city_id = %(city_id)s
+                    ORDER BY wpmi DESC
+                    LIMIT %(limit)s
+                    """,
+                    {"city_id": city_id, "limit": limit},
+                )
+                rows = cur.fetchall()
+            if rows:
+                return [(row[0], row[1]) for row in rows]
+        except Exception:
+            pass   # table doesn't exist yet → fall through to legacy path
+
+    # ── Legacy fallback: global top cuisines with greedy dedup ────────────────
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -354,6 +374,7 @@ def _load_top_cuisines(conn, limit: int = 20) -> list[tuple[str, int]]:
                 FROM top_restaurants t
                 JOIN gemini_enrichments e ON e.place_id = t.place_id
                 WHERE e.cuisine_type IS NOT NULL AND e.cuisine_type != ''
+                  AND (%(city_id)s IS NULL OR t.city_id = %(city_id)s)
                   AND EXISTS (
                       SELECT 1 FROM cuisine_neighbors cn
                       WHERE cn.cuisine_type = e.cuisine_type
@@ -362,7 +383,7 @@ def _load_top_cuisines(conn, limit: int = 20) -> list[tuple[str, int]]:
                 ORDER BY n DESC
                 LIMIT %(limit)s
                 """,
-                {"limit": limit * 5},   # fetch 5× for dedup headroom
+                {"city_id": city_id, "limit": limit * 5},
             )
             candidates = [(row[0], row[1]) for row in cur.fetchall()]
     except Exception:
@@ -1586,7 +1607,7 @@ def index(city):
             # Cuisine filter: load neighbors + top cuisine_types
             cuisine_neighbors        = _load_cuisine_neighbors(conn)
             ctx["cuisine_neighbors"] = cuisine_neighbors
-            ctx["top_cuisines"]      = _load_top_cuisines(conn)
+            ctx["top_cuisines"]      = _load_top_cuisines(conn, city_id=city_data["id"] if city_data else None)
 
             # Build main query
             score_col  = f"{profile_key}_score" if profile_key else None
@@ -2038,14 +2059,18 @@ def tipps_all():
                     r.place_id, r.name, r.address, r.rating, r.rating_count,
                     r.thumbnail_url,
                     e.cuisine_type, e.avg_price_pp, e.vibe,
-                    c.slug AS city_slug
+                    c.slug AS city_slug,
+                    COALESCE(ccl.wpmi, 0) AS dna_score
                 FROM editorial_articles a
                 JOIN restaurants r ON r.place_id = a.place_id
                 JOIN cities c ON c.id = a.city_id
                 LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
+                LEFT JOIN city_cuisine_labels ccl
+                    ON ccl.city_id = a.city_id
+                    AND e.cuisine_type = ANY(ccl.cuisine_types)
                 WHERE a.is_published = TRUE
                   AND c.is_published = TRUE
-                ORDER BY a.generated_at DESC
+                ORDER BY dna_score DESC, a.generated_at DESC
             """)
             articles = []
             for row in cur.fetchall():
@@ -2074,14 +2099,18 @@ def tipps_index(city):
                     r.place_id, r.name, r.address, r.rating, r.rating_count,
                     r.thumbnail_url,
                     e.cuisine_type, e.avg_price_pp, e.vibe,
-                    c.slug AS city_slug
+                    c.slug AS city_slug,
+                    COALESCE(ccl.wpmi, 0) AS dna_score
                 FROM editorial_articles a
                 JOIN restaurants r ON r.place_id = a.place_id
                 JOIN cities c ON c.id = a.city_id
                 LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
+                LEFT JOIN city_cuisine_labels ccl
+                    ON ccl.city_id = a.city_id
+                    AND e.cuisine_type = ANY(ccl.cuisine_types)
                 WHERE a.is_published = TRUE
                   AND a.city_id = %(city_id)s
-                ORDER BY a.generated_at DESC
+                ORDER BY dna_score DESC, a.generated_at DESC
             """, {"city_id": city_data["id"]})
             articles = []
             for row in cur.fetchall():
