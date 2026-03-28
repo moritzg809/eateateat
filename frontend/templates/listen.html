@@ -42,6 +42,11 @@
 {% set active_nav = 'listen' %}
 {% include "_nav.html" %}
 
+<div class="flex min-h-screen">
+{% set sidebar_endpoint = 'listen_index' %}
+{% include "_sidebar.html" %}
+<div class="flex-1 min-w-0">
+
   <!-- Hero -->
   <div class="bg-ink text-cream px-5 pt-12 pb-10">
     <div class="max-w-5xl mx-auto">
@@ -109,6 +114,9 @@
     {% endif %}
 
   </main>
+
+</div><!-- flex-1 -->
+</div><!-- flex -->
 
 </body>
 </html>

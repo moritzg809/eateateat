@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Küchen · EatEatEat{% if city %} · {{ city.name }}{% endif %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:   '#0f0e0d',
+            cream: '#f5f0e8',
+            sand:  '#e8e0cc',
+            terra: '#c4622d',
+            rust:  '#9e3d14',
+            sage:  '#3d5a47',
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans:  ['Inter', 'system-ui', 'sans-serif'],
+            mono:  ['"DM Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #f5f0e8; }
+    .rest-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+    .rest-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(15,14,13,0.12); }
+    .rest-card img { transition: transform 0.35s ease; }
+    .rest-card:hover img { transform: scale(1.05); }
+    .scroll-row { scrollbar-width: none; -ms-overflow-style: none; }
+    .scroll-row::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body class="min-h-screen font-sans text-ink">
+
+{% set active_nav = 'kuechen' %}
+{% include "_nav.html" %}
+
+<div class="flex min-h-screen">
+{% set sidebar_endpoint = 'kuechen_index' %}
+{% include "_sidebar.html" %}
+<div class="flex-1 min-w-0">
+
+<div class="max-w-5xl mx-auto px-4 pt-14 pb-8 text-center">
+  <p class="font-mono text-[11px] text-terra tracking-widest uppercase mb-3">DNA · Küchen</p>
+  <h1 class="font-serif text-4xl lg:text-5xl font-bold text-ink mb-4">
+    Küchen{% if city %} in {{ city.name }}{% endif %}
+  </h1>
+  <p class="font-sans text-base text-ink/55 max-w-xl mx-auto leading-relaxed">
+    Die charakteristischsten Küchenstile dieser Stadt — entdeckt durch linguistische Analyse
+    aller Restaurantdaten.
+  </p>
+</div>
+
+<main class="max-w-5xl mx-auto px-4 pb-24 space-y-14">
+
+  {% if not labels %}
+  <div class="text-center py-20 text-ink/40 font-mono text-sm">
+    Noch keine Küchendaten verfügbar.
+  </div>
+  {% endif %}
+
+  {% for lbl in labels %}
+  <section>
+    <div class="flex items-baseline justify-between mb-4">
+      <h2 class="font-serif text-2xl font-bold text-ink">{{ lbl.label }}</h2>
+      <span class="font-mono text-[11px] text-ink/35 ml-4 shrink-0">
+        {{ lbl.restaurant_n }} Restaurant{{ 's' if lbl.restaurant_n != 1 else '' }}
+      </span>
+    </div>
+
+    <div class="scroll-row flex gap-4 overflow-x-auto pb-2">
+      {% for r in lbl.restaurants %}
+      <a href="{{ city_url('restaurant_page', place_id=r.place_id) }}"
+         class="rest-card shrink-0 w-52 bg-white rounded-xl overflow-hidden border border-sand/60 no-underline block">
+        <div class="h-36 overflow-hidden bg-sand/40">
+          {% if r.photo %}
+          <img src="{{ r.photo }}" alt="{{ r.name }}" class="w-full h-full object-cover" loading="lazy">
+          {% else %}
+          <div class="w-full h-full flex items-center justify-center text-3xl text-ink/20">🍽</div>
+          {% endif %}
+        </div>
+        <div class="p-3">
+          <p class="font-sans text-sm font-semibold text-ink leading-tight line-clamp-2 mb-1">{{ r.name }}</p>
+          <div class="flex items-center gap-2 flex-wrap">
+            {% if r.rating %}
+            <span class="font-mono text-[11px] text-ink/60">★ {{ '%.1f'|format(r.rating) }}</span>
+            {% endif %}
+            {% if r.avg_price_pp %}
+            <span class="font-mono text-[11px] text-ink/40">· ~{{ r.avg_price_pp | int }}€</span>
+            {% endif %}
+          </div>
+          {% if r.vibe %}
+          <p class="font-sans text-[11px] text-ink/45 mt-1 line-clamp-1">{{ r.vibe }}</p>
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+
+</main>
+
+</div><!-- flex-1 -->
+</div><!-- flex -->
+
+</body>
+</html>

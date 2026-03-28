@@ -1,7 +1,11 @@
 <!-- Left cities sidebar -->
+<!-- sidebar_endpoint: endpoint for city links (default: tipps_index) -->
+<!-- sidebar_all_url: url for "Alle Städte" link (default: tipps_all, only shown when endpoint is tipps_index) -->
+{% set _ep = sidebar_endpoint if sidebar_endpoint is defined else 'tipps_index' %}
 <aside class="hidden lg:flex flex-col justify-center w-40 shrink-0 sticky top-0 h-screen py-10 px-3">
 
   <nav class="flex flex-col gap-0.5">
+    {% if _ep == 'tipps_index' %}
     <a href="{{ url_for('tipps_all') }}"
        class="text-center py-2.5 px-3 rounded-md font-serif text-base transition
               {% if city is not defined or city is none %}
@@ -11,9 +15,10 @@
               {% endif %}">
       Alle Städte
     </a>
+    {% endif %}
 
     {% for c in all_cities %}
-    <a href="{{ url_for('tipps_index', city=c.slug) }}"
+    <a href="{{ url_for(_ep, city=c.slug) }}"
        class="text-center py-2.5 px-3 rounded-md font-serif text-base transition
               {% if city is defined and city and city.slug == c.slug %}
                 bg-ink text-cream

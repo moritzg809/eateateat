@@ -2060,19 +2060,14 @@ def tipps_all():
                     r.thumbnail_url,
                     e.cuisine_type, e.avg_price_pp, e.vibe,
                     c.slug AS city_slug,
-                    COALESCE((
-                        SELECT MAX(ccl.wpmi)
-                        FROM city_cuisine_labels ccl
-                        WHERE ccl.city_id = a.city_id
-                          AND e.cuisine_type = ANY(ccl.cuisine_types)
-                    ), 0) AS dna_score
+                    e.curation_score
                 FROM editorial_articles a
                 JOIN restaurants r ON r.place_id = a.place_id
                 JOIN cities c ON c.id = a.city_id
                 LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
                 WHERE a.is_published = TRUE
                   AND c.is_published = TRUE
-                ORDER BY dna_score DESC, a.generated_at DESC
+                ORDER BY e.curation_score DESC NULLS LAST, r.rating DESC NULLS LAST
             """)
             articles = []
             for row in cur.fetchall():
@@ -2102,19 +2097,14 @@ def tipps_index(city):
                     r.thumbnail_url,
                     e.cuisine_type, e.avg_price_pp, e.vibe,
                     c.slug AS city_slug,
-                    COALESCE((
-                        SELECT MAX(ccl.wpmi)
-                        FROM city_cuisine_labels ccl
-                        WHERE ccl.city_id = a.city_id
-                          AND e.cuisine_type = ANY(ccl.cuisine_types)
-                    ), 0) AS dna_score
+                    e.curation_score
                 FROM editorial_articles a
                 JOIN restaurants r ON r.place_id = a.place_id
                 JOIN cities c ON c.id = a.city_id
                 LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
                 WHERE a.is_published = TRUE
                   AND a.city_id = %(city_id)s
-                ORDER BY dna_score DESC, a.generated_at DESC
+                ORDER BY e.curation_score DESC NULLS LAST, r.rating DESC NULLS LAST
             """, {"city_id": city_data["id"]})
             articles = []
             for row in cur.fetchall():
@@ -2202,6 +2192,50 @@ def tipps_article(city, slug):
     finally:
         conn.close()
     return render_template("tipps_article.html", a=article, city=city_data)
+
+
+@app.route("/<city>/küchen")
+def kuechen_index(city):
+    """Cuisine discovery page: DNA labels with top restaurants per cuisine."""
+    city_data = _get_city_or_404(city)
+    g.current_city = city_data
+    _init_db()
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT label, cuisine_types, wpmi, restaurant_n
+                FROM city_cuisine_labels
+                WHERE city_id = %(city_id)s
+                ORDER BY wpmi DESC
+            """, {"city_id": city_data["id"]})
+            labels = [dict(r) for r in cur.fetchall()]
+
+            for lbl in labels:
+                cur.execute("""
+                    SELECT
+                        r.place_id, r.name, r.address, r.rating,
+                        r.rating_count, r.thumbnail_url,
+                        e.avg_price_pp, e.vibe, e.cuisine_type, e.curation_score
+                    FROM top_restaurants t
+                    JOIN restaurants r ON r.place_id = t.place_id
+                    JOIN gemini_enrichments e ON e.place_id = r.place_id
+                    WHERE t.city_id = %(city_id)s
+                      AND e.cuisine_type = ANY(%(cuisine_types)s)
+                    ORDER BY e.curation_score DESC NULLS LAST, r.rating DESC NULLS LAST
+                    LIMIT 6
+                """, {"city_id": city_data["id"], "cuisine_types": lbl["cuisine_types"]})
+                restaurants = []
+                for row in cur.fetchall():
+                    row = dict(row)
+                    row["photo"] = _photo_url(row["place_id"], row.get("thumbnail_url"))
+                    restaurants.append(row)
+                lbl["restaurants"] = restaurants
+
+            labels = [l for l in labels if l["restaurants"]]
+    finally:
+        conn.close()
+    return render_template("kuechen.html", labels=labels, city=city_data)
 
 
 if __name__ == "__main__":
