@@ -115,6 +115,16 @@
     {% endfor %}
   </nav>
 
+  <!-- ═══ KÜCHEN LINK ═════════════════════════════════════════════ -->
+  {% if city %}
+  <div class="mb-6">
+    <a href="/küchen?city_id={{ city_id }}"
+       class="inline-flex items-center gap-2 btn-ghost rounded-lg px-4 py-2 font-mono text-xs transition-colors">
+      🧬 Küchen-DNA für {{ city.name }} →
+    </a>
+  </div>
+  {% endif %}
+
   <!-- ═══ RESTAURANT GRID ══════════════════════════════════════════ -->
   <div class="space-y-3" id="restaurant-list">
 

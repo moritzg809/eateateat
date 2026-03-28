@@ -500,6 +500,102 @@ def _run_generation(job_id: str, place_id: str, name: str, address: str, city_id
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Küchen-Übersicht — DNA cuisine labels with top-5 restaurants + article gen
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/küchen")
+def kuechen():
+    city_id = request.args.get("city_id", 1, type=int)
+    ctx: dict = {}
+    try:
+        conn = get_db()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+
+            cur.execute("SELECT id, name, slug FROM cities ORDER BY id")
+            ctx["cities"] = cur.fetchall()
+
+            cur.execute("SELECT id, name, slug FROM cities WHERE id = %s", (city_id,))
+            ctx["city"] = cur.fetchone()
+            ctx["city_id"] = city_id
+
+            # DNA cuisine labels ordered by distinctiveness
+            cur.execute("""
+                SELECT label, cuisine_types, wpmi, restaurant_n
+                FROM city_cuisine_labels
+                WHERE city_id = %s
+                ORDER BY wpmi DESC
+            """, (city_id,))
+            labels = [dict(r) for r in cur.fetchall()]
+            for lbl in labels:
+                lbl["wpmi"] = float(lbl["wpmi"])
+                lbl["wpmi_pct"] = min(int(lbl["wpmi"] / 3.0 * 100), 100)
+
+            # Top 5 restaurants per label (by rating DESC), with article status
+            for lbl in labels:
+                cur.execute("""
+                    SELECT
+                        r.place_id, r.name, r.address, r.rating, r.rating_count,
+                        r.thumbnail_url, r.website, r.latitude, r.longitude,
+                        e.cuisine_type, e.avg_price_pp,
+                        a.slug     AS article_slug,
+                        a.title    AS article_title,
+                        a.is_published,
+                        c.slug     AS city_slug
+                    FROM top_restaurants t
+                    JOIN restaurants r   ON r.place_id = t.place_id
+                    JOIN gemini_enrichments e ON e.place_id = r.place_id
+                    JOIN cities c        ON c.id = t.city_id
+                    LEFT JOIN editorial_articles a ON a.place_id = r.place_id
+                    WHERE t.city_id = %s
+                      AND e.cuisine_type = ANY(%s)
+                    ORDER BY r.rating DESC NULLS LAST, r.rating_count DESC NULLS LAST
+                    LIMIT 5
+                """, (city_id, lbl["cuisine_types"]))
+                lbl["restaurants"] = [dict(r) for r in cur.fetchall()]
+
+            ctx["labels"] = [l for l in labels if l["restaurants"]]
+
+            # Ausreißer: top_restaurants whose cuisine_type doesn't match any label
+            all_types = []
+            for l in labels:
+                all_types.extend(l["cuisine_types"])
+            if all_types:
+                cur.execute("""
+                    SELECT
+                        r.place_id, r.name, r.address, r.rating, r.rating_count,
+                        r.thumbnail_url, r.website, r.latitude, r.longitude,
+                        e.cuisine_type, e.avg_price_pp,
+                        a.slug     AS article_slug,
+                        a.title    AS article_title,
+                        a.is_published,
+                        c.slug     AS city_slug
+                    FROM top_restaurants t
+                    JOIN restaurants r   ON r.place_id = t.place_id
+                    JOIN gemini_enrichments e ON e.place_id = r.place_id
+                    JOIN cities c        ON c.id = t.city_id
+                    LEFT JOIN editorial_articles a ON a.place_id = r.place_id
+                    WHERE t.city_id = %s
+                      AND (e.cuisine_type IS NULL OR NOT (e.cuisine_type = ANY(%s)))
+                    ORDER BY r.rating DESC NULLS LAST, r.rating_count DESC NULLS LAST
+                    LIMIT 10
+                """, (city_id, all_types))
+                ctx["outliers"] = [dict(r) for r in cur.fetchall()]
+            else:
+                ctx["outliers"] = []
+
+        conn.close()
+    except Exception as exc:
+        ctx["error"] = str(exc)
+
+    ctx["active_jobs"] = {
+        job["place_id"]: {"job_id": jid, **job}
+        for jid, job in _JOBS.items()
+        if job.get("status") in ("pending", "running")
+    }
+    return render_template("kuechen.html", **ctx)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Articles list
 # ─────────────────────────────────────────────────────────────────────────────
 

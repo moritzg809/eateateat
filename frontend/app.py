@@ -2060,14 +2060,16 @@ def tipps_all():
                     r.thumbnail_url,
                     e.cuisine_type, e.avg_price_pp, e.vibe,
                     c.slug AS city_slug,
-                    COALESCE(ccl.wpmi, 0) AS dna_score
+                    COALESCE((
+                        SELECT MAX(ccl.wpmi)
+                        FROM city_cuisine_labels ccl
+                        WHERE ccl.city_id = a.city_id
+                          AND e.cuisine_type = ANY(ccl.cuisine_types)
+                    ), 0) AS dna_score
                 FROM editorial_articles a
                 JOIN restaurants r ON r.place_id = a.place_id
                 JOIN cities c ON c.id = a.city_id
                 LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
-                LEFT JOIN city_cuisine_labels ccl
-                    ON ccl.city_id = a.city_id
-                    AND e.cuisine_type = ANY(ccl.cuisine_types)
                 WHERE a.is_published = TRUE
                   AND c.is_published = TRUE
                 ORDER BY dna_score DESC, a.generated_at DESC
@@ -2100,14 +2102,16 @@ def tipps_index(city):
                     r.thumbnail_url,
                     e.cuisine_type, e.avg_price_pp, e.vibe,
                     c.slug AS city_slug,
-                    COALESCE(ccl.wpmi, 0) AS dna_score
+                    COALESCE((
+                        SELECT MAX(ccl.wpmi)
+                        FROM city_cuisine_labels ccl
+                        WHERE ccl.city_id = a.city_id
+                          AND e.cuisine_type = ANY(ccl.cuisine_types)
+                    ), 0) AS dna_score
                 FROM editorial_articles a
                 JOIN restaurants r ON r.place_id = a.place_id
                 JOIN cities c ON c.id = a.city_id
                 LEFT JOIN gemini_enrichments e ON e.place_id = a.place_id
-                LEFT JOIN city_cuisine_labels ccl
-                    ON ccl.city_id = a.city_id
-                    AND e.cuisine_type = ANY(ccl.cuisine_types)
                 WHERE a.is_published = TRUE
                   AND a.city_id = %(city_id)s
                 ORDER BY dna_score DESC, a.generated_at DESC

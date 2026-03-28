@@ -524,9 +524,17 @@ CITIES = {
             "Agnesviertel Köln",
             "Neustadt-Nord Köln",
             "Neustadt-Süd Köln",
+
+            # Wichtige Plätze / Mikro-Cluster (gezielt ergänzt)
             "Friesenplatz Köln",
+            "Rudolfplatz Köln",
+            "Heumarkt Köln",
+            "Neumarkt Köln",
+            "Chlodwigplatz Köln",
+
+            # Bestehende starke Cluster
             "Mediapark Köln",
-            "Rheinauhafen Köln",
+            "Rheinauhafen Köln"
         ],
         "min_rating": 4.3,
         "min_rating_count": 50,
@@ -575,6 +583,46 @@ CITIES = {
             "Bogenhausen München",
             "Sendling München",
             "Gärtnerplatzviertel München",
+
+            # Zentrale Plätze / Core
+            "Marienplatz München",
+            "Odeonsplatz München",
+            "Karlsplatz Stachus München",
+            "Sendlinger Tor München",
+            "Isartor München",
+
+            # Szene-Anker
+            "Münchner Freiheit München",
+            "Gärtnerplatz München",
+            "Kolumbusplatz München",
+
+            # Food Hotspots
+            "Viktualienmarkt München",
+            "Elisabethmarkt München",
+            "Werksviertel München",
+            "Schlachthofviertel München",
+
+            # Straßen / Mikro-Cluster (sehr relevant!)
+            "Leopoldstraße München",
+            "Türkenstraße München",
+            "Amalienstraße München",
+            "Schellingstraße München",
+            "Augsburgerstraße München",
+            "Fraunhoferstraße München",
+            "Müllerstraße München",
+            "Klenzestraße München",
+            "Occamstraße München",
+            "Hohenzollernstraße München",
+            "Elisabethstraße München",
+
+            # Erweiterte Cluster
+            "Westend München",
+            "Schwanthalerhöhe München",
+            "Ludwigsvorstadt München",
+
+            # Ergänzende, aber relevante Punkte
+            "Theresienwiese München",
+            "Prinzregentenplatz München"
         ],
         "min_rating": 4.3,
         "min_rating_count": 50,
@@ -658,19 +706,55 @@ CITIES = {
         "locations": [
             "Berlin",
             "Berlin-Mitte",
+            "Mitte Berlin",
             "Prenzlauer Berg Berlin",
             "Kreuzberg Berlin",
             "Neukölln Berlin",
             "Friedrichshain Berlin",
             "Charlottenburg Berlin",
             "Schöneberg Berlin",
-            "Mitte Berlin",
+
+            # Kieze / Mikro-Cluster (bestehende + ergänzt)
             "Hackescher Markt Berlin",
             "Bergmannkiez Berlin",
             "Kollwitzkiez Berlin",
-            "Kastanienallee Berlin",
-            "Winterfeldtplatz Berlin",
-            "Savignyplatz Berlin",
+            "Reuterkiez Berlin",
+            "Wrangelkiez Berlin",
+            "Boxhagener Platz Berlin",
+            "Akazienkiez Berlin",
+
+            # Zentrale Plätze / Anker
+            "Rosenthaler Platz Berlin",
+            "Oranienplatz Berlin",
+            "Hermannplatz Berlin",
+            "Kottbusser Tor Berlin",
+            "Nollendorfplatz Berlin",
+
+            # Wichtige Straßen (extrem relevant in Berlin!)
+            "Oranienstraße Berlin",
+            "Weserstraße Berlin",
+            "Pannierstraße Berlin",
+            "Reichenberger Straße Berlin",
+            "Skalitzer Straße Berlin",
+            "Torstraße Berlin",
+            "Alte Schönhauser Straße Berlin",
+            "Auguststraße Berlin",
+            "Oderberger Straße Berlin",
+            "Simon-Dach-Straße Berlin",
+            "Rykestraße Berlin",
+
+            # Food Hotspots / Märkte
+            "Markthalle Neun Berlin",
+            "Arminiusmarkthalle Berlin",
+
+            # Erweiterte, aber wichtige Bezirke
+            "Moabit Berlin",
+            "Wedding Berlin",
+            "Tiergarten Berlin",
+
+            # High-End / etablierte Zonen
+            "Kurfürstendamm Berlin",
+            "Potsdamer Platz Berlin"
         ],
         "min_rating": 4.3,
         "min_rating_count": 50,
