@@ -121,6 +121,11 @@ def run(dry_run: bool = False, force: bool = False, init_only: bool = False,
             logger.info("%s %s  '%s' in '%s'", prefix, action, term, location)
             try:
                 data = search_maps(term, location, gl=search_country, hl=search_language)
+                if data is None:
+                    logger.error("         -> API returned None (all keys exhausted?)")
+                    stats["errors"] += 1
+                    mark_pipeline_run(conn, term, location, 0, "error")
+                    continue
                 cache_id = save_cache(conn, term, location, "maps", data)
                 stats["api_calls"] += 1
                 logger.info("         -> saved to cache id=%d", cache_id)

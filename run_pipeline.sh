@@ -13,7 +13,7 @@
 set -euo pipefail
 
 DOCKER="/usr/local/bin/docker"
-CITIES=("mallorca" "stuttgart" "london")
+CITIES=("mallorca" "stuttgart" "london" "koeln" "muenchen" "hamburg" "berlin")
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 
