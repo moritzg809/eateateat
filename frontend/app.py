@@ -36,7 +36,7 @@ def sso():
     try:
         pyjwt.decode(token, SSO_SECRET, algorithms=["HS256"])
         session["authenticated"] = True
-        return redirect(url_for("index"))
+        return redirect("/")
     except Exception:
         return redirect(PORTAL_URL)
 
