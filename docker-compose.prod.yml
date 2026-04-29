@@ -1,0 +1,11 @@
+# Production overrides (Hetzner)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up -d
+services:
+  frontend:
+    restart: unless-stopped
+
+  admin-frontend:
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped

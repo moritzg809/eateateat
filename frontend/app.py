@@ -12,10 +12,33 @@ import markdown2
 import numpy as np
 import psycopg2
 import psycopg2.extras
+import jwt as pyjwt
 from flask import Flask, render_template, request, jsonify, make_response, redirect, session, g, url_for, abort
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mallorcaeat-dev-key")
+
+SSO_SECRET = os.environ.get("SSO_SECRET", "")
+PORTAL_URL = "https://moritzglauner.com"
+
+
+@app.before_request
+def require_auth():
+    if request.path == "/sso" or request.path.startswith("/static"):
+        return
+    if not session.get("authenticated"):
+        return redirect(PORTAL_URL)
+
+
+@app.route("/sso")
+def sso():
+    token = request.args.get("token", "")
+    try:
+        pyjwt.decode(token, SSO_SECRET, algorithms=["HS256"])
+        session["authenticated"] = True
+        return redirect(url_for("index"))
+    except Exception:
+        return redirect(PORTAL_URL)
 
 PHOTOS_DIR  = "/app/static/photos"   # Docker volume mount (same as scraper's /photos)
 MAX_PHOTOS  = 8

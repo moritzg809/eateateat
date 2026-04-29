@@ -3,3 +3,4 @@ psycopg2-binary==2.9.9
 numpy
 markdown2==2.5.3
 sentence-transformers>=3.0
+PyJWT==2.8.0

@@ -11,13 +11,35 @@ import uuid
 from datetime import datetime, timezone
 
 import psycopg2
+import jwt as pyjwt
 import psycopg2.extras
-from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mallorcaeat-admin-dev-secret")
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+SSO_SECRET = os.environ.get("SSO_SECRET", "")
+PORTAL_URL = "https://moritzglauner.com"
+
+
+@app.before_request
+def require_auth():
+    if request.path == "/sso" or request.path.startswith("/static"):
+        return
+    if not session.get("authenticated"):
+        return redirect(PORTAL_URL)
+
+
+@app.route("/sso")
+def sso():
+    token = request.args.get("token", "")
+    try:
+        pyjwt.decode(token, SSO_SECRET, algorithms=["HS256"])
+        session["authenticated"] = True
+        return redirect(url_for("index"))
+    except Exception:
+        return redirect(PORTAL_URL)
 
 REVIEW_PAGE_SIZE = 50
 
