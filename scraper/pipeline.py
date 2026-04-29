@@ -31,6 +31,7 @@ import time
 import psycopg2.extras
 
 import backfill_photos
+import scrape_emails
 import website_scraper
 import image_classifier
 import promote_photos
@@ -60,7 +61,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "promote", "curation", "jina_embed", "cuisine_dna", "verify"]
+ALL_STAGES = ["search", "qualify", "enrich", "completeness", "gem_qualify", "details", "critic_enrich", "photos", "website", "classify", "promote", "curation", "jina_embed", "cuisine_dna", "scrape_emails", "verify"]
 
 # Quality thresholds (must match config)
 MIN_RATING  = 4.5
@@ -515,6 +516,11 @@ def main():
         logger.info("[PROMOTE] Starting…")
         promote_photos.run(dry_run=args.dry_run)
         logger.info("[PROMOTE] Done.")
+
+    if "scrape_emails" in stages:
+        logger.info("[SCRAPE_EMAILS] Starting…")
+        scrape_emails.run(dry_run=args.dry_run)
+        logger.info("[SCRAPE_EMAILS] Done.")
 
     if "curation" in stages:
         stage_curation(dry_run=args.dry_run)

@@ -68,7 +68,9 @@ for city in "${CITIES[@]}"; do
   fi
 done
 
-# ── Cross-city: enrich, details, photos, etc. ─────────────────────────────────
+# ── Cross-city: ALL_STAGES minus search + qualify (those already ran per-city) ──
+# Keep in sync with ALL_STAGES in scraper/pipeline.py.
+CROSS_CITY_STAGES="enrich,completeness,gem_qualify,critic_enrich,details,photos,website,classify,promote,curation,jina_embed,cuisine_dna,verify"
 
 log "════════════════════════════════════════"
 log "  Starting cross-city stages"
@@ -76,7 +78,7 @@ log "═════════════════════════
 
 "$DOCKER" compose --profile pipeline run --rm pipeline \
   --city all \
-  --stages enrich,completeness,gem_qualify,critic_enrich,details,photos,website,classify,promote,curation,jina_embed,cuisine_dna,verify \
+  --stages "$CROSS_CITY_STAGES" \
   ${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}
 
 log "════════════════════════════════════════"

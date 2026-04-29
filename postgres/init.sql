@@ -25,6 +25,7 @@ CREATE TABLE restaurants (
     categories      TEXT[],
     phone           TEXT,
     website         TEXT,
+    email           TEXT,
     latitude        NUMERIC(10, 7),
     longitude       NUMERIC(10, 7),
     thumbnail_url   TEXT,

@@ -536,7 +536,7 @@ def kuechen():
                     SELECT
                         r.place_id, r.name, r.address, r.rating, r.rating_count,
                         r.thumbnail_url, r.website, r.latitude, r.longitude,
-                        e.cuisine_type, e.avg_price_pp,
+                        e.cuisine_type, e.avg_price_pp, e.curation_score,
                         a.slug     AS article_slug,
                         a.title    AS article_title,
                         a.is_published,
@@ -548,7 +548,7 @@ def kuechen():
                     LEFT JOIN editorial_articles a ON a.place_id = r.place_id
                     WHERE t.city_id = %s
                       AND e.cuisine_type = ANY(%s)
-                    ORDER BY r.rating DESC NULLS LAST, r.rating_count DESC NULLS LAST
+                    ORDER BY e.curation_score DESC NULLS LAST, r.rating DESC NULLS LAST
                     LIMIT 5
                 """, (city_id, lbl["cuisine_types"]))
                 lbl["restaurants"] = [dict(r) for r in cur.fetchall()]
@@ -564,7 +564,7 @@ def kuechen():
                     SELECT
                         r.place_id, r.name, r.address, r.rating, r.rating_count,
                         r.thumbnail_url, r.website, r.latitude, r.longitude,
-                        e.cuisine_type, e.avg_price_pp,
+                        e.cuisine_type, e.avg_price_pp, e.curation_score,
                         a.slug     AS article_slug,
                         a.title    AS article_title,
                         a.is_published,
@@ -576,7 +576,7 @@ def kuechen():
                     LEFT JOIN editorial_articles a ON a.place_id = r.place_id
                     WHERE t.city_id = %s
                       AND (e.cuisine_type IS NULL OR NOT (e.cuisine_type = ANY(%s)))
-                    ORDER BY r.rating DESC NULLS LAST, r.rating_count DESC NULLS LAST
+                    ORDER BY e.curation_score DESC NULLS LAST, r.rating DESC NULLS LAST
                     LIMIT 10
                 """, (city_id, all_types))
                 ctx["outliers"] = [dict(r) for r in cur.fetchall()]
